@@ -715,7 +715,7 @@ let modalSubmit = null;
 function modal(html, onSubmit) {
   modalSubmit = onSubmit || null;
   $("#modal-root").innerHTML = `<div class="overlay"><div class="modal">${html}</div></div>`;
-  const f = $("#f"); if (f) { f.onsubmit = (e) => { e.preventDefault(); const r = modalSubmit && modalSubmit(new FormData(f)); if (r !== false) closeModal(); }; const first = f.querySelector("input,select"); first && first.focus(); }
+  const f = $("#f"); if (f) { f.onsubmit = (e) => { e.preventDefault(); const r = modalSubmit && modalSubmit(new FormData(f)); if (r !== false) closeModal(); }; const first = f.querySelector("input,select"); if (first && !matchMedia("(pointer:coarse)").matches) first.focus(); }
 }
 function closeModal() { stopCam(); $("#modal-root").innerHTML = ""; modalSubmit = null; }
 let toastT;
