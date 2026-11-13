@@ -4,20 +4,23 @@ window.ART = (() => {
   const line = (d, extra = "") => `<svg viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}${extra}</svg>`;
   const shapes = {
     Blusas: line(`<path d="M35 18c3 6 9 9 15 9s12-3 15-9l14 8-6 16-8-3v40H35V39l-8 3-6-16z"/><path d="M50 27v8"/><path d="M41 60c6 3 12 3 18 0"/>`),
-    Camisas: line(`<path d="M36 16l14 6 14-6 15 9-6 15-7-2v42H34V38l-7 2-6-15z"/><path d="M50 22v58"/><path d="M50 22l-6 8h12z"/><circle cx="50" cy="40" r="1.2" fill="currentColor"/><circle cx="50" cy="52" r="1.2" fill="currentColor"/><circle cx="50" cy="64" r="1.2" fill="currentColor"/>`),
     Pantalones: line(`<path d="M32 14h36l4 72H56l-6-42-6 42H28z"/><path d="M32 24h36"/><path d="M50 24v10"/>`),
     Vestidos: line(`<path d="M38 14h24l-4 18 14 50H28l14-50z"/><path d="M42 20h16"/><path d="M34 60c10 4 22 4 32 0"/>`),
-    Calzado: line(`<path d="M14 66c0-6 8-8 18-10l10-12c4-4 8-4 12-2l6 4c8 4 18 6 24 12 4 4 2 10-4 10H18c-3 0-4-1-4-2z"/><path d="M42 44l8 8M48 40l8 8"/><path d="M14 66h66"/>`),
-    Accesorios: line(`<path d="M40 14h20v36l10 10c4 4 2 12-4 14-6 2-14 0-18-4l-8-8z"/><path d="M40 20h20"/><path d="M40 50l-6 6"/>`),
-    Botas: line(`<path d="M36 12h22v40l20 14c4 3 2 10-4 10H30V12z"/><path d="M36 20h22M36 30h22M36 40h22"/>`),
+    Faldas: line(`<path d="M36 22h28l14 58H22z"/><path d="M36 22c4 4 24 4 28 0"/><path d="M44 22l-6 58M56 22l6 58"/>`),
+    Sandalias: line(`<path d="M22 70c-4-8 4-22 18-26l26-6c10-2 16 4 14 14l-4 18z"/><path d="M40 44l12 24M52 42l10 22M34 52l24-6"/><path d="M22 70h54"/>`),
+    Tacones: line(`<path d="M20 70c6-10 18-14 30-16l10-26c2-4 8-6 12-2 6 6 6 14 2 20L60 66l-4 6H20z"/><path d="M34 72v14"/><path d="M60 46l12 2"/>`),
+    Tenis: line(`<path d="M14 66c0-6 8-8 18-10l10-12c4-4 8-4 12-2l6 4c8 4 18 6 24 12 4 4 2 10-4 10H18c-3 0-4-1-4-2z"/><path d="M42 44l8 8M48 40l8 8"/><path d="M14 66h66"/>`),
+    Bolsos: line(`<path d="M24 38h52l-6 46H30z"/><path d="M36 38c0-14 28-14 28 0"/><path d="M24 50h52"/><path d="M50 56v8"/>`),
+    Carteras: line(`<rect x="18" y="36" width="64" height="36" rx="6"/><path d="M18 50h64"/><circle cx="50" cy="56" r="4"/><path d="M30 36c6-10 34-10 40 0"/>`),
+    Accesorios: line(`<circle cx="36" cy="54" r="14"/><circle cx="64" cy="54" r="14"/><circle cx="36" cy="36" r="3"/><circle cx="64" cy="36" r="3"/><path d="M36 39v1M64 39v1"/>`),
     default: line(`<path d="M30 20h40v60H30z"/><path d="M38 34h24M38 46h24M38 58h16"/>`)
   };
-  const tints = { Blusas: "#F6E7EA", Camisas: "#ECEFF4", Pantalones: "#DFE5EC", Vestidos: "#EFE4EE", Calzado: "#EDE6DC", Accesorios: "#ECEAE4", default: "#EEEEEC" };
-  const shapeOf = (p) => (p.name || "").toLowerCase().includes("bota") ? "Botas" : (shapes[p.cat] ? p.cat : "default");
+  const tints = { Blusas: "#F6E7EA", Pantalones: "#DFE5EC", Vestidos: "#EFE4EE", Faldas: "#F1E8DE", Sandalias: "#EDE6DC", Tacones: "#F3E4E2", Tenis: "#ECEFF1", Bolsos: "#EAE0D4", Carteras: "#F2E6E6", Accesorios: "#F4EFE2", default: "#EEEEEC" };
+  const shapeOf = (p) => shapes[p.cat] ? p.cat : "default";
   function thumb(p, cls = "") {
     if (p.photo) return `<div class="art ${cls}" style="background-image:url('${p.photo}')"></div>`;
     const k = shapeOf(p);
-    return `<div class="art ${cls}" style="background:${tints[shapes[k] ? (k === "Botas" ? "Calzado" : k) : "default"]}">${shapes[k]}</div>`;
+    return `<div class="art ${cls}" style="background:${tints[k]}">${shapes[k]}</div>`;
   }
   // Comprime una foto a 480px para guardarla en el navegador
   function compress(file) {

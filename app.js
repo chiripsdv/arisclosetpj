@@ -2,7 +2,7 @@
    En producción la capa "DB" se reemplaza por Supabase (mismas funciones). */
 (() => {
 "use strict";
-const KEY = "aris-demo-v2";
+const KEY = "aris-demo-v3";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const uid = () => Math.random().toString(36).slice(2, 9);
@@ -33,7 +33,7 @@ function seedHistory() {
       if (d === 0 && dt > now) dt = new Date(now.getTime() - Math.random() * 4 * 3600e3);
       const p = DB.products[Math.floor(Math.random() * DB.products.length)];
       const v = p.variants[Math.floor(Math.random() * p.variants.length)];
-      const qty = p.cat === "Accesorios" ? 1 + Math.floor(Math.random() * 3) : 1;
+      const qty = ["Accesorios", "Carteras"].includes(p.cat) ? 1 + Math.floor(Math.random() * 3) : 1;
       const sub = p.price * qty;
       const r = Math.random();
       const disc = r < 0.2 ? { type: "manual", pct: 10, amount: Math.round(sub * .1), by: null } : r < 0.3 ? { type: "codigo", code: "ARI15", pct: 15, amount: Math.round(sub * .15) } : null;
@@ -294,13 +294,13 @@ function invView() {
   const q = S.invQ.trim().toLowerCase();
   let prods = DB.products.filter(p => !q || (p.name + p.brand + p.cat).toLowerCase().includes(q));
   if (S.invFilter === "Stock bajo") prods = prods.filter(p => p.variants.some(v => v.stock <= DB.settings.lowStock));
-  else if (S.invFilter !== "Todo") prods = prods.filter(p => S.invFilter === "Calzado" ? p.cat === "Calzado" : p.cat !== "Calzado");
+  else if (S.invFilter !== "Todo") { const shoes = ["Sandalias", "Tacones", "Tenis"], bags = ["Bolsos", "Carteras", "Accesorios"]; prods = prods.filter(p => S.invFilter === "Calzado" ? shoes.includes(p.cat) : S.invFilter === "Bolsos y accesorios" ? bags.includes(p.cat) : !shoes.includes(p.cat) && !bags.includes(p.cat)); }
   const pieces = DB.products.reduce((a, p) => a + p.variants.reduce((b, v) => b + v.stock, 0), 0);
   const value = DB.products.reduce((a, p) => a + p.variants.reduce((b, v) => b + v.stock * p.cost, 0), 0);
   return topbar("Inventario", `${pieces} piezas${can("canSeeProfit") ? " · valor al costo " + money(value) : ""}`, can("canStockIn") ? `<button class="btn" data-act="stockin">${I.plus}<span class="hide-m">Entrada</span></button>${can("canEditCatalog") ? `<button class="btn dark" data-act="newprod">${I.plus}<span class="hide-m">Producto</span></button>` : ""}` : "") + `
   <div class="content" style="gap:12px">
     <div class="search full">${I.search}<input id="invQ" placeholder="Producto, marca o categoría" value="${esc(S.invQ)}"></div>
-    <div class="seg">${["Todo", "Ropa", "Calzado", "Stock bajo"].map(f => `<button data-inv="${f}" class="${S.invFilter === f ? "on" + (f === "Stock bajo" ? " red" : "") : ""}">${f}${f === "Stock bajo" ? " · " + lowStock().length : ""}</button>`).join("")}</div>
+    <div class="seg">${["Todo", "Ropa", "Calzado", "Bolsos y accesorios", "Stock bajo"].map(f => `<button data-inv="${f}" class="${S.invFilter === f ? "on" + (f === "Stock bajo" ? " red" : "") : ""}">${f}${f === "Stock bajo" ? " · " + lowStock().length : ""}</button>`).join("")}</div>
     <div class="inv-grid">${prods.map(p => { const st = p.variants.reduce((a, v) => a + v.stock, 0); return `<div class="card inv-item"><div class="inv-top"><button class="art-btn" data-photo="${p.id}" title="${can("canEditCatalog") ? "Cambiar foto" : ""}" ${can("canEditCatalog") ? "" : "disabled"}>${ART.thumb(p, "sm")}</button><div class="i"><b>${esc(p.name)}</b><span>${esc(p.brand)} · ${money(p.price)}${can("canSeeProfit") ? " · costo " + money(p.cost) : ""}</span></div><div class="n"><b>${st}</b><span>en stock</span></div></div>
       <div class="vchips">${p.variants.map(v => `<span class="chip ${v.stock === 0 ? "solid-red" : v.stock <= DB.settings.lowStock ? "red" : ""}">${esc(v.size)} ${esc(v.color)} · ${v.stock}</span>`).join("")}</div></div>`; }).join("") || `<div class="empty">Sin productos</div>`}</div>
   </div>`;
