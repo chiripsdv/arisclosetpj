@@ -1,6 +1,6 @@
 // Datos iniciales del demo. En producción esto vive en Supabase.
 window.SEED = {
-  settings: { store: "Ari's Closet", currency: "Q", lowStock: 2, minMargin: 5 },
+  settings: { store: "Ari's Closet", currency: "C$", lowStock: 2, minMargin: 5 },
   users: [
     { id: "u1", name: "Ariana", email: "ariana@arischoset.com", role: "propietaria", pin: "1234", pass: "1234", active: true },
     { id: "u2", name: "Karla", email: "karla@arischoset.com", role: "admin", pin: "2222", pass: "1234", active: true },
