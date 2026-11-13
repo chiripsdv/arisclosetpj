@@ -321,3 +321,23 @@ tr.tot td{background:#FAFAF9;border-top:2px solid var(--ink)}
 .vrow input{height:38px;border:1px solid var(--line);border-radius:8px;padding:0 10px;min-width:0;background:#fff}
 .vstock{font-size:12px;color:var(--muted);white-space:nowrap;min-width:48px}
 @media (max-width:900px){.vrow{grid-template-columns:1fr 1fr auto;}.vrow input[name=v_code]{grid-column:1/3}}
+
+/* Ajuste fino para teléfonos: sin desbordes y sin zoom automático al escribir */
+html,body{max-width:100%;overflow-x:clip}
+img,svg,video{max-width:100%}
+@media (max-width:900px), (pointer:coarse){
+  input,select,textarea,.search input,.field input,.field select,.field textarea,.vrow input,.scan-manual input{font-size:16px!important}
+}
+@media (max-width:900px){
+  .topbar{flex-wrap:wrap;gap:8px 10px}
+  .topbar>div:first-child{flex:1 1 150px;min-width:0}
+  .topbar .grow{display:none}
+  .topbar h1,.topbar .sub{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .topbar .btn{height:38px}
+  .topbar .btn.icon,.topbar .btn:not(:has(span:not(.hide-m))){padding:0 10px}
+  .tabbar a{flex:1 1 0;min-width:0}
+  .tabbar a span{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .modal{max-width:100vw}
+  .main,.content{min-width:0;max-width:100vw}
+}
+.inv-top .i .who{display:flex}
