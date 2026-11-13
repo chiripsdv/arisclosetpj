@@ -201,7 +201,7 @@ function ventaView() {
   <div class="content pos">
     <section class="stack" style="gap:12px">
       <div class="search full">${I.search}<input id="posQ" placeholder="Buscar producto, talla, color o código" value="${esc(S.q)}" autocomplete="off"></div>
-      <div class="prod-grid">${prods.map(p => `<div class="prod"><div class="ph ${p.color}"></div><b>${esc(p.name)}</b><span class="hint">${esc(p.brand)} · ${esc(p.cat)}</span><span class="pr">${money(p.price)}</span>
+      <div class="prod-grid">${prods.map(p => `<div class="prod">${ART.thumb(p, "big")}<b>${esc(p.name)}</b><span class="hint">${esc(p.brand)} · ${esc(p.cat)}</span><span class="pr">${money(p.price)}</span>
         <div class="vars">${p.variants.map(v => `<button data-add="${v.id}" ${v.stock <= 0 ? "disabled" : ""} class="${v.stock <= DB.settings.lowStock ? "low" : ""}" title="Stock ${v.stock}">${esc(v.size)} ${esc(v.color)} · ${v.stock}</button>`).join("")}</div></div>`).join("") || `<div class="empty">Sin resultados</div>`}</div>
     </section>
     <aside class="card cart-panel hide-m" style="padding:16px">${cartHTML()}</aside>
@@ -213,7 +213,7 @@ function cartHTML() {
   const lim = role().maxDisc;
   const n = S.cart.reduce((a, c) => a + c.qty, 0);
   return `      <div class="row" style="padding:0 0 8px;border:none"><span class="section-title">Carrito · ${n} ${n === 1 ? "artículo" : "artículos"}</span>${S.cart.length ? `<button class="btn ghost sm" data-act="clearcart">Vaciar</button>` : ""}</div>
-      ${S.cart.length ? S.cart.map(c => `<div class="cart-item"><div class="ph ${prodById(c.pid).color}"></div><div class="i"><b>${esc(c.name)}</b><span>${esc(c.size)} · ${esc(c.color)} · ${money(c.price)}</span></div>
+      ${S.cart.length ? S.cart.map(c => `<div class="cart-item">${ART.thumb(prodById(c.pid), "sm")}<div class="i"><b>${esc(c.name)}</b><span>${esc(c.size)} · ${esc(c.color)} · ${money(c.price)}</span></div>
         <div class="qty"><button data-qty="${c.vid}|-1">−</button><b>${c.qty}</b><button class="plus" data-qty="${c.vid}|1">+</button></div></div>`).join("") : `<div class="empty">Tocá una talla para agregarla</div>`}
       <div style="padding:14px 0 6px;display:flex;flex-direction:column;gap:10px">
         <div class="row" style="padding:0;border:none"><span style="font-weight:600;display:inline-flex;gap:8px;align-items:center;color:var(--red)">${I.disc}<span style="color:var(--ink)">Descuento</span></span><span class="chip">Tu límite ${lim} %</span></div>
@@ -301,7 +301,7 @@ function invView() {
   <div class="content" style="gap:12px">
     <div class="search full">${I.search}<input id="invQ" placeholder="Producto, marca o categoría" value="${esc(S.invQ)}"></div>
     <div class="seg">${["Todo", "Ropa", "Calzado", "Stock bajo"].map(f => `<button data-inv="${f}" class="${S.invFilter === f ? "on" + (f === "Stock bajo" ? " red" : "") : ""}">${f}${f === "Stock bajo" ? " · " + lowStock().length : ""}</button>`).join("")}</div>
-    <div class="inv-grid">${prods.map(p => { const st = p.variants.reduce((a, v) => a + v.stock, 0); return `<div class="card inv-item"><div class="inv-top"><div class="ph ${p.color}"></div><div class="i"><b>${esc(p.name)}</b><span>${esc(p.brand)} · ${money(p.price)}${can("canSeeProfit") ? " · costo " + money(p.cost) : ""}</span></div><div class="n"><b>${st}</b><span>en stock</span></div></div>
+    <div class="inv-grid">${prods.map(p => { const st = p.variants.reduce((a, v) => a + v.stock, 0); return `<div class="card inv-item"><div class="inv-top"><button class="art-btn" data-photo="${p.id}" title="${can("canEditCatalog") ? "Cambiar foto" : ""}" ${can("canEditCatalog") ? "" : "disabled"}>${ART.thumb(p, "sm")}</button><div class="i"><b>${esc(p.name)}</b><span>${esc(p.brand)} · ${money(p.price)}${can("canSeeProfit") ? " · costo " + money(p.cost) : ""}</span></div><div class="n"><b>${st}</b><span>en stock</span></div></div>
       <div class="vchips">${p.variants.map(v => `<span class="chip ${v.stock === 0 ? "solid-red" : v.stock <= DB.settings.lowStock ? "red" : ""}">${esc(v.size)} ${esc(v.color)} · ${v.stock}</span>`).join("")}</div></div>`; }).join("") || `<div class="empty">Sin productos</div>`}</div>
   </div>`;
 }
@@ -365,36 +365,87 @@ function rangeDays() {
   const n = S.repRange === "hoy" ? 1 : S.repRange === "semana" ? 7 : 30;
   const out = []; for (let i = n - 1; i >= 0; i--) { const d = new Date(); d.setDate(d.getDate() - i); out.push(dayOf(d)); } return out;
 }
-function repView() {
+function repData() {
   const days = rangeDays(), set = new Set(days);
   const s = DB.sales.filter(x => set.has(x.day) && x.status === "cerrada"), e = DB.expenses.filter(x => set.has(x.day));
-  const total = s.reduce((a, x) => a + x.total, 0), cost = s.reduce((a, x) => a + x.items.reduce((b, i) => b + i.cost * i.qty, 0), 0), exp = e.reduce((a, x) => a + x.amount, 0), disc = s.reduce((a, x) => a + (x.discount ? x.discount.amount : 0), 0);
-  const top = {}; s.forEach(x => x.items.forEach(i => { top[i.name] = top[i.name] || { q: 0, t: 0 }; top[i.name].q += i.qty; top[i.name].t += i.price * i.qty; }));
-  const topL = Object.entries(top).sort((a, b) => b[1].t - a[1].t).slice(0, 6);
-  const bySeller = DB.users.map(u => { const m = s.filter(x => x.seller === u.id); return { u, n: m.length, t: m.reduce((a, x) => a + x.total, 0), d: m.reduce((a, x) => a + (x.discount ? x.discount.amount : 0), 0) }; }).filter(x => x.n);
+  const total = s.reduce((a, x) => a + x.total, 0), gross = s.reduce((a, x) => a + x.subtotal, 0), cost = s.reduce((a, x) => a + x.items.reduce((b, i) => b + i.cost * i.qty, 0), 0), exp = e.reduce((a, x) => a + x.amount, 0), disc = s.reduce((a, x) => a + (x.discount ? x.discount.amount : 0), 0);
+  // líneas: el descuento del ticket se prorratea por línea según su peso
+  const lines = []; s.forEach(x => { const f = x.subtotal ? x.total / x.subtotal : 1; x.items.forEach(i => lines.push({ ...i, sale: x, gross: i.price * i.qty, net: Math.round(i.price * i.qty * f), disc: Math.round(i.price * i.qty * (1 - f)), costT: i.cost * i.qty, cat: (prodById(i.pid) || {}).cat || "—", brand: (prodById(i.pid) || {}).brand || "—" })); });
+  const group = (key) => { const m = {}; lines.forEach(l => { const k = key(l); m[k] = m[k] || { k, q: 0, gross: 0, disc: 0, net: 0, cost: 0, n: new Set() }; const g = m[k]; g.q += l.qty; g.gross += l.gross; g.disc += l.disc; g.net += l.net; g.cost += l.costT; g.n.add(l.sale.id); }); return Object.values(m).map(g => ({ ...g, n: g.n.size, margin: g.net - g.cost, pct: g.net ? (g.net - g.cost) / g.net * 100 : 0 })).sort((a, b) => b.net - a.net); };
+  return { days, s, e, total, gross, cost, exp, disc, lines, group };
+}
+function repView() {
+  const D = repData(); const { days, s, e, total, gross, cost, exp, disc } = D;
+  const tab = S.repTab || "resumen"; const P = can("canSeeProfit");
+  const tabs = [["resumen", "Resumen"], ["producto", "Por producto"], ["categoria", "Categorías"], ["vendedora", "Vendedoras"], ["tickets", "Tickets"], ["inventario", "Inventario"], ["movimientos", "Movimientos"]];
+  const mcell = (g) => P ? `<td class="r">${money(g.margin)}</td><td class="r"><span class="chip ${g.pct >= 40 ? "green" : g.pct >= 20 ? "" : "red"}">${g.pct.toFixed(0)} %</span></td>` : "";
+  const mhead = P ? `<th class="r">Margen</th><th class="r">%</th>` : "";
+  const tbl = (head, rows, empty = "Sin datos") => `<div class="tbl-wrap"><table><thead><tr>${head}</tr></thead><tbody>${rows.join("") || `<tr><td colspan="12" class="empty">${empty}</td></tr>`}</tbody></table></div>`;
   const perDay = days.map(d => s.filter(x => x.day === d).reduce((a, x) => a + x.total, 0)); const pmax = Math.max(1, ...perDay);
-  const byPay = DB.payMethods.map(m => ({ m, t: s.filter(x => x.pay === m).reduce((a, x) => a + x.total, 0) }));
-  return topbar("Reportes", `${days.length === 1 ? "Hoy" : "Últimos " + days.length + " días"} · ${s.length} ventas`, `<button class="btn" data-act="csv">${I.down}<span class="hide-m">Exportar CSV</span></button>`) + `
-  <div class="content">
-    <div class="seg">${[["hoy", "Hoy"], ["semana", "7 días"], ["mes", "30 días"]].map(([k, l]) => `<button data-rep="${k}" class="${S.repRange === k ? "on" : ""}">${l}</button>`).join("")}</div>
-    <section class="kpis">
-      <div class="card kpi"><div class="lbl">Ventas</div><div class="val">${money(total)}</div><div class="foot">${s.length} tickets</div></div>
-      <div class="card kpi"><div class="lbl">Descuentos</div><div class="val red">${money(disc)}</div><div class="foot">${total ? (disc / (total + disc) * 100).toFixed(1) : 0} % de lo vendido</div></div>
-      <div class="card kpi"><div class="lbl">Gastos</div><div class="val">${money(exp)}</div><div class="foot">${e.length} registros</div></div>
-      ${can("canSeeProfit") ? `<div class="card kpi"><div class="lbl">Utilidad</div><div class="val" style="color:var(--green)">${money(total - cost - exp)}</div><div class="foot">Costo de mercadería ${money(cost)}</div></div>` : `<div class="card kpi"><div class="lbl">Ticket promedio</div><div class="val">${money(s.length ? total / s.length : 0)}</div><div class="foot">por venta</div></div>`}
+  let body = "";
+  if (tab === "resumen") {
+    const byPay = DB.payMethods.map(m => ({ m, t: s.filter(x => x.pay === m).reduce((a, x) => a + x.total, 0) }));
+    const hours = Array.from({ length: 12 }, (_, i) => s.filter(x => new Date(x.at).getHours() === 9 + i).reduce((a, x) => a + x.total, 0)); const hmax = Math.max(1, ...hours);
+    const topL = D.group(l => l.name).slice(0, 5);
+    body = `<section class="kpis">
+      <div class="card kpi"><div class="lbl">Venta bruta</div><div class="val">${money(gross)}</div><div class="foot">${s.length} tickets · ${D.lines.reduce((a, l) => a + l.qty, 0)} piezas</div></div>
+      <div class="card kpi"><div class="lbl">Descuentos</div><div class="val red">− ${money(disc)}</div><div class="foot">${gross ? (disc / gross * 100).toFixed(1) : 0} % de la venta bruta</div></div>
+      <div class="card kpi"><div class="lbl">Venta neta</div><div class="val">${money(total)}</div><div class="foot">Ticket promedio ${money(s.length ? total / s.length : 0)}</div></div>
+      ${P ? `<div class="card kpi"><div class="lbl">Utilidad bruta</div><div class="val" style="color:var(--green)">${money(total - cost)}</div><div class="foot">Margen ${total ? ((total - cost) / total * 100).toFixed(0) : 0} % · costo ${money(cost)}</div></div>` : `<div class="card kpi"><div class="lbl">Piezas por ticket</div><div class="val">${s.length ? (D.lines.reduce((a, l) => a + l.qty, 0) / s.length).toFixed(1) : 0}</div><div class="foot">promedio</div></div>`}
     </section>
+    ${P ? `<section class="card"><div class="card-h"><h2>Estado de resultados del período</h2></div><div class="card-b list" style="padding-top:4px;padding-bottom:4px">
+      <div class="row"><span>Venta bruta</span><b>${money(gross)}</b></div><div class="row"><span>− Descuentos</span><b style="color:var(--red)">− ${money(disc)}</b></div><div class="row"><span>= Venta neta</span><b>${money(total)}</b></div>
+      <div class="row"><span>− Costo de mercadería vendida</span><b>− ${money(cost)}</b></div><div class="row"><span>= Utilidad bruta</span><b>${money(total - cost)}</b></div>
+      <div class="row"><span>− Gastos operativos (${e.length})</span><b>− ${money(exp)}</b></div><div class="row" style="border-top:2px solid var(--ink)"><span style="font-weight:700">= Utilidad neta</span><b style="color:${total - cost - exp >= 0 ? "var(--green)" : "var(--red)"};font-size:16px">${money(total - cost - exp)}</b></div></div></section>` : ""}
     <section class="card"><div class="card-h"><h2>Ventas por día</h2></div><div class="card-b"><div class="mini-chart" style="height:120px">${perDay.map((v, i) => `<i class="${i === perDay.length - 1 ? "red" : ""}" style="height:${v / pmax * 100}%" title="${days[i]} · ${money(v)}"></i>`).join("")}</div><div class="row" style="border:none;padding:6px 0 0"><span class="hint">${fmtD(days[0])}</span><span class="hint">${fmtD(days[days.length - 1])}</span></div></div></section>
     <div class="grid-2" style="grid-template-columns:repeat(auto-fit,minmax(300px,1fr))">
-      <section class="card"><div class="card-h"><h2>Más vendidos</h2></div><div class="tbl-wrap"><table><thead><tr><th>Producto</th><th class="r">Uds.</th><th class="r">Total</th></tr></thead><tbody>${topL.map(([n, v]) => `<tr><td><b>${esc(n)}</b></td><td class="r">${v.q}</td><td class="r">${money(v.t)}</td></tr>`).join("") || `<tr><td colspan="3" class="empty">Sin datos</td></tr>`}</tbody></table></div></section>
-      <section class="card"><div class="card-h"><h2>Descuentos por vendedora</h2></div><div class="tbl-wrap"><table><thead><tr><th>Vendedora</th><th class="r">Ventas</th><th class="r">Vendido</th><th class="r">Descontado</th></tr></thead><tbody>${bySeller.map(x => `<tr><td><b>${esc(x.u.name)}</b></td><td class="r">${x.n}</td><td class="r">${money(x.t)}</td><td class="r" style="color:var(--red)">${money(x.d)}</td></tr>`).join("") || `<tr><td colspan="4" class="empty">Sin datos</td></tr>`}</tbody></table></div></section>
-      <section class="card"><div class="card-h"><h2>Formas de pago</h2></div><div class="card-b" style="display:flex;flex-direction:column;gap:14px">${byPay.map(x => `<div style="display:flex;flex-direction:column;gap:6px"><div class="row" style="padding:0;border:none"><span>${esc(x.m)}</span><b>${money(x.t)}</b></div><div class="bar"><i style="width:${total ? x.t / total * 100 : 0}%"></i></div></div>`).join("")}</div></section>
+      <section class="card"><div class="card-h"><h2>Más vendidos</h2></div>${tbl(`<th>Producto</th><th class="r">Uds.</th><th class="r">Neto</th>`, topL.map(g => `<tr><td><b>${esc(g.k)}</b></td><td class="r">${g.q}</td><td class="r">${money(g.net)}</td></tr>`))}</section>
+      <section class="card"><div class="card-h"><h2>Ventas por hora</h2><span class="hint">9 h – 20 h</span></div><div class="card-b"><div class="mini-chart" style="height:100px">${hours.map((h, i) => `<i class="${h === hmax && h > 0 ? "red" : ""}" style="height:${h / hmax * 100}%" title="${9 + i}:00 · ${money(h)}"></i>`).join("")}</div></div></section>
+      <section class="card"><div class="card-h"><h2>Formas de pago</h2></div><div class="card-b" style="display:flex;flex-direction:column;gap:14px">${byPay.map(x => `<div style="display:flex;flex-direction:column;gap:6px"><div class="row" style="padding:0;border:none"><span>${esc(x.m)}</span><b>${money(x.t)} <span class="hint">${total ? (x.t / total * 100).toFixed(0) : 0} %</span></b></div><div class="bar"><i style="width:${total ? x.t / total * 100 : 0}%"></i></div></div>`).join("")}</div></section>
+    </div>`;
+  } else if (tab === "producto") {
+    const g = D.group(l => l.name); const gv = D.group(l => `${l.name} · ${l.size} ${l.color}`);
+    body = `<section class="card"><div class="card-h"><h2>Ventas por producto</h2><span class="hint">${g.length} productos</span></div>${tbl(`<th>Producto</th><th class="r">Uds.</th><th class="r">Tickets</th><th class="r">Bruto</th><th class="r">Desc.</th><th class="r">Neto</th>${P ? `<th class="r">Costo</th>` : ""}${mhead}`, g.map(x => `<tr><td><b>${esc(x.k)}</b></td><td class="r">${x.q}</td><td class="r">${x.n}</td><td class="r">${money(x.gross)}</td><td class="r" style="color:var(--red)">${x.disc ? "− " + money(x.disc) : "—"}</td><td class="r"><b>${money(x.net)}</b></td>${P ? `<td class="r">${money(x.cost)}</td>` : ""}${mcell(x)}</tr>`))}</section>
+    <section class="card"><div class="card-h"><h2>Detalle por talla y color</h2></div>${tbl(`<th>Variante</th><th class="r">Uds.</th><th class="r">Neto</th>${mhead}`, gv.map(x => `<tr><td>${esc(x.k)}</td><td class="r">${x.q}</td><td class="r">${money(x.net)}</td>${mcell(x)}</tr>`))}</section>`;
+  } else if (tab === "categoria") {
+    const g = D.group(l => l.cat), gb = D.group(l => l.brand); const mx = Math.max(1, ...g.map(x => x.net));
+    body = `<div class="grid-2" style="grid-template-columns:repeat(auto-fit,minmax(320px,1fr))">
+    <section class="card"><div class="card-h"><h2>Por categoría</h2></div><div class="card-b" style="display:flex;flex-direction:column;gap:14px">${g.map(x => `<div style="display:flex;flex-direction:column;gap:6px"><div class="row" style="padding:0;border:none"><span><b>${esc(x.k)}</b> <span class="hint">${x.q} uds.</span></span><b>${money(x.net)}${P ? ` <span class="chip ${x.pct >= 40 ? "green" : ""}">${x.pct.toFixed(0)} %</span>` : ""}</b></div><div class="bar"><i style="width:${x.net / mx * 100}%"></i></div></div>`).join("") || `<div class="empty">Sin datos</div>`}</div></section>
+    <section class="card"><div class="card-h"><h2>Por marca</h2></div>${tbl(`<th>Marca</th><th class="r">Uds.</th><th class="r">Neto</th>${mhead}`, gb.map(x => `<tr><td><b>${esc(x.k)}</b></td><td class="r">${x.q}</td><td class="r">${money(x.net)}</td>${mcell(x)}</tr>`))}</section></div>`;
+  } else if (tab === "vendedora") {
+    const rows = DB.users.map(u => { const m = s.filter(x => x.seller === u.id); const ls = D.lines.filter(l => l.sale.seller === u.id); const net = m.reduce((a, x) => a + x.total, 0), c = ls.reduce((a, l) => a + l.costT, 0); return { u, n: m.length, q: ls.reduce((a, l) => a + l.qty, 0), gross: m.reduce((a, x) => a + x.subtotal, 0), disc: m.reduce((a, x) => a + (x.discount ? x.discount.amount : 0), 0), nd: m.filter(x => x.discount).length, pin: m.filter(x => x.discount && x.discount.type === "pin").length, net, margin: net - c, pct: net ? (net - c) / net * 100 : 0 }; }).filter(x => x.n).sort((a, b) => b.net - a.net);
+    body = `<section class="card"><div class="card-h"><h2>Desempeño por vendedora</h2></div>${tbl(`<th>Vendedora</th><th class="r">Tickets</th><th class="r">Piezas</th><th class="r">Bruto</th><th class="r">Descuentos</th><th class="r">Con desc.</th><th class="r">Con PIN</th><th class="r">Neto</th><th class="r">Ticket prom.</th>${mhead}`, rows.map(x => `<tr><td><span class="who"><span class="avatar ${x.u.role === "propietaria" ? "red" : x.u.role === "vendedor" ? "grey" : ""}">${esc(x.u.name[0])}</span><b>${esc(x.u.name)}</b></span></td><td class="r">${x.n}</td><td class="r">${x.q}</td><td class="r">${money(x.gross)}</td><td class="r" style="color:var(--red)">${x.disc ? "− " + money(x.disc) : "—"}</td><td class="r">${x.nd} <span class="hint">(${(x.nd / x.n * 100).toFixed(0)} %)</span></td><td class="r">${x.pin}</td><td class="r"><b>${money(x.net)}</b></td><td class="r">${money(x.net / x.n)}</td>${mcell(x)}</tr>`))}</section>
+    <section class="card"><div class="card-h"><h2>Descuentos otorgados</h2><span class="hint">quién, cuánto y por qué</span></div>${tbl(`<th>Fecha</th><th>Ticket</th><th>Vendedora</th><th>Tipo</th><th class="r">%</th><th class="r">Monto</th><th>Autorizó</th>`, s.filter(x => x.discount).slice().reverse().map(x => `<tr><td>${fmtD(x.at)} ${fmtT(x.at)}</td><td>#${x.n}</td><td>${esc(userById(x.seller).name)}</td><td>${discChip(x.discount)}</td><td class="r">${x.discount.pct} %</td><td class="r" style="color:var(--red)">− ${money(x.discount.amount)}</td><td>${x.discount.type === "pin" ? esc(userById(x.discount.by).name) : x.discount.type === "codigo" ? "Código" : "Dentro de límite"}</td></tr>`), "Sin descuentos en el período")}</section>`;
+  } else if (tab === "tickets") {
+    body = `<section class="card"><div class="card-h"><h2>Tickets del período</h2><span class="hint">${s.length} ventas</span></div>${tbl(`<th>Fecha</th><th>Ticket</th><th>Vendedora</th><th>Artículos</th><th>Pago</th><th class="r">Bruto</th><th class="r">Desc.</th><th class="r">Total</th>`, s.slice().reverse().map(x => `<tr><td>${fmtD(x.at)} <span class="hint">${fmtT(x.at)}</span></td><td>#${x.n}</td><td>${esc(userById(x.seller).name)}</td><td>${esc(x.items.map(i => `${i.qty > 1 ? i.qty + " × " : ""}${i.name} ${i.size} ${i.color}`).join(", "))}</td><td><span class="chip">${esc(x.pay)}</span></td><td class="r">${money(x.subtotal)}</td><td class="r" style="color:var(--red)">${x.discount ? "− " + money(x.discount.amount) : "—"}</td><td class="r"><b>${money(x.total)}</b></td></tr>`))}</section>`;
+  } else if (tab === "inventario") {
+    const rows = DB.products.map(p => { const st = p.variants.reduce((a, v) => a + v.stock, 0); const sold = D.lines.filter(l => l.pid === p.id).reduce((a, l) => a + l.qty, 0); return { p, st, sold, costV: st * p.cost, priceV: st * p.price, low: p.variants.filter(v => v.stock <= DB.settings.lowStock).length, days: sold ? Math.round(st / (sold / days.length)) : null }; }).sort((a, b) => b.priceV - a.priceV);
+    const tc = rows.reduce((a, r) => a + r.costV, 0), tp = rows.reduce((a, r) => a + r.priceV, 0), tu = rows.reduce((a, r) => a + r.st, 0);
+    body = `<section class="kpis"><div class="card kpi"><div class="lbl">Piezas en stock</div><div class="val">${tu}</div><div class="foot">${DB.products.length} productos · ${DB.products.reduce((a, p) => a + p.variants.length, 0)} variantes</div></div>
+      ${P ? `<div class="card kpi"><div class="lbl">Valor al costo</div><div class="val">${money(tc)}</div><div class="foot">dinero invertido en mercadería</div></div>` : ""}
+      <div class="card kpi"><div class="lbl">Valor a precio de venta</div><div class="val">${money(tp)}</div><div class="foot">${P ? "ganancia potencial " + money(tp - tc) : "si se vende todo"}</div></div>
+      <div class="card kpi"><div class="lbl">Variantes en stock bajo</div><div class="val red">${lowStock().length}</div><div class="foot">${lowStock().filter(x => x.v.stock === 0).length} agotadas</div></div></section>
+    <section class="card"><div class="card-h"><h2>Inventario valorizado y rotación</h2><span class="hint">vendido en el período seleccionado</span></div>${tbl(`<th>Producto</th><th class="r">Stock</th><th class="r">Vendidas</th><th class="r">Días de stock</th>${P ? `<th class="r">Valor costo</th>` : ""}<th class="r">Valor venta</th><th>Alertas</th>`, rows.map(r => `<tr><td><b>${esc(r.p.name)}</b> <span class="hint">${esc(r.p.cat)}</span></td><td class="r">${r.st}</td><td class="r">${r.sold}</td><td class="r">${r.days == null ? "<span class='hint'>sin ventas</span>" : r.days < 7 ? `<span class="chip red">${r.days} d</span>` : r.days + " d"}</td>${P ? `<td class="r">${money(r.costV)}</td>` : ""}<td class="r">${money(r.priceV)}</td><td>${r.low ? `<span class="chip red">${r.low} variante${r.low > 1 ? "s" : ""}</span>` : `<span class="chip green">OK</span>`}</td></tr>`))}</section>`;
+  } else if (tab === "movimientos") {
+    const set = new Set(days); const mv = DB.moves.filter(m => set.has(dayOf(new Date(m.at)))).slice().reverse();
+    const lbl = { venta: "Venta", compra: "Compra", ajuste: "Ajuste", devolucion: "Devolución" };
+    body = `<section class="card"><div class="card-h"><h2>Movimientos de inventario (kárdex)</h2><span class="hint">${mv.length} movimientos</span></div>${tbl(`<th>Fecha</th><th>Producto</th><th>Tipo</th><th class="r">Cantidad</th><th>Usuario</th><th>Ref.</th>`, mv.map(m => { const r = varById(m.vid); return `<tr><td>${fmtD(m.at)} <span class="hint">${fmtT(m.at)}</span></td><td><b>${r ? esc(r.p.name) : "—"}</b> <span class="hint">${r ? esc(r.v.size + " " + r.v.color) : ""}</span></td><td><span class="chip ${m.qty < 0 ? "" : "green"}">${lbl[m.type] || m.type}</span></td><td class="r" style="font-weight:700;color:${m.qty < 0 ? "var(--red)" : "var(--green)"}">${m.qty > 0 ? "+" : ""}${m.qty}</td><td>${esc(userById(m.by).name)}</td><td class="hint">${m.ref ? "Ticket #" + m.ref : "—"}</td></tr>`; }), "Sin movimientos registrados en el período (las ventas de ejemplo no generan kárdex; las nuevas sí)")}</section>`;
+  }
+  return topbar("Reportes", `${days.length === 1 ? "Hoy" : "Últimos " + days.length + " días"} · ${s.length} ventas`, `<button class="btn" data-act="csv">${I.down}<span class="hide-m">Exportar CSV</span></button>`) + `
+  <div class="content">
+    <div style="display:flex;flex-wrap:wrap;gap:10px;justify-content:space-between;align-items:center">
+      <div class="seg">${[["hoy", "Hoy"], ["semana", "7 días"], ["mes", "30 días"]].map(([k, l]) => `<button data-rep="${k}" class="${S.repRange === k ? "on" : ""}">${l}</button>`).join("")}</div>
+      <div class="seg" style="overflow-x:auto;flex-wrap:nowrap">${tabs.map(([k, l]) => `<button data-reptab="${k}" class="${tab === k ? "on red" : ""}">${l}</button>`).join("")}</div>
     </div>
+    ${body}
   </div>`;
 }
 function exportCSV() {
   const set = new Set(rangeDays());
   const rows = [["ticket", "fecha", "hora", "vendedora", "articulos", "subtotal", "descuento_tipo", "descuento_monto", "total", "pago"]];
   DB.sales.filter(x => set.has(x.day)).forEach(x => rows.push([x.n, x.day, fmtT(x.at), userById(x.seller).name, x.items.map(i => `${i.qty}x ${i.name} ${i.size} ${i.color}`).join(" | "), x.subtotal, x.discount ? x.discount.type : "", x.discount ? x.discount.amount : 0, x.total, x.pay]));
+  const D = repData(); rows.push([], ["producto", "unidades", "bruto", "descuento", "neto", "costo", "margen", "margen_pct"]);
+  D.group(l => l.name).forEach(g => rows.push([g.k, g.q, g.gross, g.disc, g.net, can("canSeeProfit") ? g.cost : "", can("canSeeProfit") ? g.margin : "", can("canSeeProfit") ? g.pct.toFixed(1) : ""]));
   const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
   const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob(["﻿" + csv], { type: "text/csv" })); a.download = `ventas-${S.repRange}.csv`; a.click();
 }
@@ -497,7 +548,7 @@ function bind() {
   app.querySelectorAll("[data-role]").forEach(s => s.onchange = (e) => { userById(e.target.dataset.role).role = e.target.value; save(); render(); toast("Rol actualizado"); });
 }
 document.addEventListener("click", (e) => {
-  const t = e.target.closest("[data-act],[data-add],[data-qty],[data-disc],[data-pay],[data-inv],[data-rep],[data-addcat],[data-delcat],[data-lim],[data-toggle],[data-close]");
+  const t = e.target.closest("[data-act],[data-add],[data-qty],[data-disc],[data-pay],[data-inv],[data-rep],[data-reptab],[data-photo],[data-addcat],[data-delcat],[data-lim],[data-toggle],[data-close]");
   if (!t) { if (e.target.classList.contains("overlay")) closeModal(); return; }
   if (t.dataset.close != null) { S.cartOpen = false; closeModal(); return; }
   if (t.dataset.add) return addToCart(t.dataset.add);
@@ -506,9 +557,11 @@ document.addEventListener("click", (e) => {
   if (t.dataset.pay) { S.pay = t.dataset.pay; return render(); }
   if (t.dataset.inv) { S.invFilter = t.dataset.inv; return render(); }
   if (t.dataset.rep) { S.repRange = t.dataset.rep; return render(); }
+  if (t.dataset.reptab) { S.repTab = t.dataset.reptab; return render(); }
   if (t.dataset.addcat) return addCatModal(t.dataset.addcat);
   if (t.dataset.delcat) { const [k, i] = t.dataset.delcat.split("|"); DB[k].splice(+i, 1); save(); return render(); }
   if (t.dataset.lim) { const [k, d] = t.dataset.lim.split("|"); DB.roles[k].maxDisc = Math.min(100, Math.max(0, DB.roles[k].maxDisc + +d)); save(); return render(); }
+  if (t.dataset.photo) { const inp = document.createElement("input"); inp.type = "file"; inp.accept = "image/*"; inp.onchange = async () => { const f = inp.files[0]; if (!f) return; try { prodById(t.dataset.photo).photo = await ART.compress(f); save(); render(); toast("Foto actualizada"); } catch { toast("No se pudo leer la imagen", true); } }; inp.click(); return; }
   if (t.dataset.toggle) { const u = userById(t.dataset.toggle); u.active = !u.active; save(); return render(); }
   const a = t.dataset.act;
   if (a === "opencart") { S.cartOpen = true; render(); }

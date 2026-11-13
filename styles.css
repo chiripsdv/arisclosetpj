@@ -237,3 +237,17 @@ tr.hl td{background:#FFF7F7}
   .print-only,.print-only *{visibility:visible}
   .print-only{display:block;position:absolute;left:0;top:0;width:280px;font-family:ui-monospace,monospace;font-size:12px;white-space:pre-wrap}
 }
+
+/* Ilustraciones / fotos */
+.art{border-radius:10px;display:flex;align-items:center;justify-content:center;color:#5A5A56;background-size:cover;background-position:center;overflow:hidden}
+.art svg{width:62%;height:62%}
+.art.big{height:92px;width:100%}
+.art.sm{width:48px;height:56px;flex-shrink:0}
+.cart-item .art.sm{width:44px;height:52px}
+.art-btn{padding:0;border:none;background:none;border-radius:10px;position:relative;cursor:pointer}
+.art-btn:disabled{cursor:default}
+.art-btn:not(:disabled)::after{content:"";position:absolute;right:-3px;bottom:-3px;width:16px;height:16px;border-radius:50%;background:var(--ink);border:2px solid #fff;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2.5'%3E%3Cpath d='M12 5v14M5 12h14'/%3E%3C/svg%3E");background-size:9px;background-repeat:no-repeat;background-position:center}
+@media (max-width:900px){.prod .art.big{height:70px}}
+td,th{white-space:nowrap}
+td:nth-child(1){white-space:normal}
+.seg button{white-space:nowrap;flex-shrink:0}
