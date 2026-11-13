@@ -131,6 +131,7 @@ const I = {
   down: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 21h16"/></svg>',
   out: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>',
   cam: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M7 8v8M10 8v8M13.5 8v8M17 8v8"/></svg>',
+  edit: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>',
   phone: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M11 18h2"/></svg>',
   barcode: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M4 5v14M7 5v14M10.5 5v14M13 5v14M16.5 5v14M20 5v14"/></svg>',
   share: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg>',
@@ -386,7 +387,7 @@ function invView() {
     <div class="search full">${I.search}<input id="invQ" placeholder="Producto, marca, categoría o código" value="${esc(S.invQ)}"></div>
     <div class="seg">${["Todo", "Ropa", "Calzado", "Bolsos y accesorios", "Stock bajo"].map(f => `<button data-inv="${f}" class="${S.invFilter === f ? "on" + (f === "Stock bajo" ? " red" : "") : ""}">${f}${f === "Stock bajo" ? " · " + lowStockP().length : ""}</button>`).join("")}</div>
     <div class="inv-grid">${prods.map(p => { const st = p.variants.reduce((a, v) => a + v.stock, 0); return `<div class="card inv-item"><div class="inv-top"><button class="art-btn" data-photo="${p.id}" title="${can("canEditCatalog") ? "Cambiar foto" : ""}" ${can("canEditCatalog") ? "" : "disabled"}>${ART.thumb(p, "sm")}</button><div class="i"><b>${esc(p.name)}</b><span>${esc(p.brand)} · ${money(p.price)}${can("canSeeProfit") ? " · costo " + money(p.cost) : ""}</span>${DB.partners.length > 1 ? `<span class="who" style="gap:6px;margin-top:3px">${pDot(p.partner)}${esc(partnerById(p.partner).name)}</span>` : ""}</div><div class="n"><b>${st}</b><span>en stock</span></div></div>
-      <div class="vchips">${p.variants.map(v => `<span class="chip ${v.stock === 0 ? "solid-red" : v.stock <= DB.settings.lowStock ? "red" : ""}" title="Código ${esc(v.code)}">${esc(v.size)} ${esc(v.color)} · ${v.stock}</span>`).join("")}</div></div>`; }).join("") || `<div class="empty">Sin productos</div>`}</div>
+      <div class="vchips">${p.variants.map(v => `<span class="chip ${v.stock === 0 ? "solid-red" : v.stock <= DB.settings.lowStock ? "red" : ""}" title="Código ${esc(v.code)}">${esc(v.size)} ${esc(v.color)} · ${v.stock}</span>`).join("")}</div>${can("canEditCatalog") ? `<button class="btn sm edit-btn" data-editprod="${p.id}">${I.edit} Editar</button>` : ""}</div>`; }).join("") || `<div class="empty">Sin productos</div>`}</div>
   </div>`;
 }
 function stockInModal(preVid) {
@@ -417,6 +418,45 @@ function selectStockVariant(r) {
   const q = $("#f input[name=qty]"); if (q && $("#siVid").dataset.last === r.v.id) q.value = +q.value + 1;
   $("#siVid").dataset.last = r.v.id;
   toast(`${r.p.name} ${r.v.size} ${r.v.color} · ${partnerById(r.p.partner).name}`);
+}
+function editProdModal(id) {
+  const p = prodById(id); if (!p) return;
+  const sold = (vid) => DB.sales.some(x => x.items.some(i => i.vid === vid));
+  const vrow = (v, i) => `<div class="vrow" data-vrow="${v ? v.id : "new"}">
+      <input name="v_size" value="${esc(v ? v.size : "")}" placeholder="Talla" aria-label="Talla" required>
+      <input name="v_color" value="${esc(v ? v.color : "")}" placeholder="Color" aria-label="Color" required>
+      <input name="v_code" value="${esc(v ? v.code : newCode())}" placeholder="Código" aria-label="Código de barras" inputmode="numeric">
+      <span class="vstock" title="El stock se cambia con Registrar entrada">${v ? v.stock + " uds." : "nueva"}</span>
+      <button type="button" class="btn ghost sm" data-delvrow title="Quitar variante" ${v && (v.stock > 0 || sold(v.id)) ? "disabled" : ""}>${I.x}</button>
+    </div>`;
+  modal(`<div class="modal-h"><h3>Editar producto</h3><button class="btn icon ghost" data-close>${I.x}</button></div>
+  <form id="f" class="form">
+    <div class="field full"><label>Nombre</label><input name="name" required value="${esc(p.name)}"></div>
+    <div class="field"><label>Categoría</label><select name="cat">${DB.categories.map(c => `<option ${c === p.cat ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></div>
+    <div class="field"><label>Marca</label><select name="brand">${DB.brands.map(c => `<option ${c === p.brand ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></div>
+    <div class="field"><label>Costo</label><input name="cost" type="number" min="0" required value="${p.cost}"></div>
+    <div class="field"><label>Precio de venta</label><input name="price" type="number" min="0" required value="${p.price}"></div>
+    <div class="field full"><label>Socio dueño</label><select name="partner">${partnerOpts(p.partner)}</select></div>
+    <div class="field full"><label>Tallas y colores</label>
+      <div id="vrows" class="vrows">${p.variants.map(vrow).join("")}</div>
+      <button type="button" class="btn sm" id="addVrow" style="align-self:flex-start">${I.plus} Agregar variante</button>
+      <span class="hint">El stock no se edita aquí: se cambia con <b>Registrar entrada</b> para que quede en el historial. Solo se pueden quitar variantes sin stock y sin ventas.</span>
+    </div>
+    <button class="btn dark lg full" type="submit">Guardar cambios</button>
+    <button type="button" class="btn ghost full" data-act="delprod" data-pid="${p.id}" ${p.variants.some(v => v.stock > 0 || sold(v.id)) ? "disabled title='Tiene stock o ventas registradas'" : ""}>Eliminar producto</button>
+  </form>`, (f) => {
+    const rows = [...document.querySelectorAll("#vrows .vrow")].map(r => ({ id: r.dataset.vrow, size: r.querySelector("[name=v_size]").value.trim(), color: r.querySelector("[name=v_color]").value.trim(), code: r.querySelector("[name=v_code]").value.trim() }));
+    if (!rows.length) { toast("El producto necesita al menos una variante", true); return false; }
+    const codes = rows.map(r => r.code).filter(Boolean);
+    if (new Set(codes).size !== codes.length) { toast("Hay códigos repetidos", true); return false; }
+    const clash = codes.find(c => DB.products.some(x => x.id !== p.id && x.variants.some(v => v.code === c)));
+    if (clash) { toast(`El código ${clash} ya lo usa otro producto`, true); return false; }
+    Object.assign(p, { name: f.get("name").trim(), cat: f.get("cat"), brand: f.get("brand"), cost: +f.get("cost"), price: +f.get("price"), partner: f.get("partner") });
+    p.variants = rows.map(r => { const v = p.variants.find(x => x.id === r.id) || { id: uid(), stock: 0 }; return Object.assign(v, { size: r.size, color: r.color, code: r.code || newCode() }); });
+    save(); render(); toast("Producto actualizado");
+  });
+  $("#addVrow").onclick = () => { $("#vrows").insertAdjacentHTML("beforeend", vrow(null)); $("#vrows .vrow:last-child input").focus(); };
+  $("#vrows").onclick = (e) => { const b = e.target.closest("[data-delvrow]"); if (b && !b.disabled) b.closest(".vrow").remove(); };
 }
 function newProdModal() {
   modal(`<div class="modal-h"><h3>Nuevo producto</h3><button class="btn icon ghost" data-close>${I.x}</button></div>
@@ -691,9 +731,10 @@ function bind() {
   app.querySelectorAll("[data-role]").forEach(s => s.onchange = (e) => { userById(e.target.dataset.role).role = e.target.value; save(); render(); toast("Rol actualizado"); });
 }
 document.addEventListener("click", (e) => {
-  const t = e.target.closest("[data-act],[data-add],[data-qty],[data-disc],[data-pay],[data-inv],[data-rep],[data-reptab],[data-photo],[data-addcat],[data-delcat],[data-lim],[data-toggle],[data-partner],[data-editpartner],[data-delpartner],[data-assign],[data-close]");
+  const t = e.target.closest("[data-act],[data-add],[data-qty],[data-disc],[data-pay],[data-inv],[data-rep],[data-reptab],[data-photo],[data-addcat],[data-delcat],[data-lim],[data-toggle],[data-partner],[data-editpartner],[data-delpartner],[data-assign],[data-editprod],[data-close]");
   if (!t) { if (e.target.classList.contains("overlay")) closeModal(); return; }
   if (t.dataset.close != null) { S.cartOpen = false; closeModal(); return; }
+  if (t.dataset.editprod) return editProdModal(t.dataset.editprod);
   if (t.dataset.partner) { S.partner = t.dataset.partner; return render(); }
   if (t.dataset.editpartner) return partnerModal(t.dataset.editpartner);
   if (t.dataset.delpartner) { DB.partners = DB.partners.filter(p => p.id !== t.dataset.delpartner); if (S.partner === t.dataset.delpartner) S.partner = "all"; save(); closeModal(); return render(); }
@@ -721,6 +762,7 @@ document.addEventListener("click", (e) => {
   else if (a === "wa") waSend(t.dataset.sale);
   else if (a === "share") shareTicket(t.dataset.sale);
   else if (a === "newpartner") partnerModal();
+  else if (a === "delprod") { if (confirm("¿Eliminar este producto?")) { DB.products = DB.products.filter(x => x.id !== t.dataset.pid); save(); closeModal(); render(); toast("Producto eliminado"); } }
   else if (a === "labels") labelsModal();
   else if (a === "pair") pairModal();
   else if (a === "unpair") { localStorage.removeItem(SCAN_KEY); stopScanner(); pairModal(); }
