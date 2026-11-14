@@ -151,10 +151,10 @@ function render() {
   const low = lowStock().length;
   const todayTotal = salesOf(today()).reduce((a, s) => a + s.total, 0);
   app.innerHTML = `
-  <div class="shell">
+  <div class="shell ${v === "venta" && S.cart.length ? "has-cart" : ""}">
     <aside class="sidebar">
       <div class="brand"><img src="icons/logo.png" alt=""><div><div class="brand-name">${esc(DB.settings.store)}</div><div class="brand-sub">${esc(role().label)}</div></div></div>
-      <nav class="nav">${NAV.filter(([k]) => role().views.includes(k)).map(([k, l]) => `<a href="#${k}" class="${v === k ? "active" : ""}">${I[k]}<span>${l}</span>${k === "inventario" && low ? `<span class="badge">${low}</span>` : ""}</a>`).join("")}</nav>
+      <nav class="nav">${NAV.filter(([k]) => role().views.includes(k)).map(([k, l]) => `<a href="#${k}" class="${v === k ? "active" : ""}">${I[k]}<span>${l}</span>${tabBadge(k, low)}</a>`).join("")}</nav>
       <div class="side-foot">
         ${installHTML()}
         <div class="cashbox"><small>Caja de hoy</small><b>${money(todayTotal)}</b><small>${salesOf(today()).length} tickets</small></div>
@@ -164,10 +164,28 @@ function render() {
     <div class="main">
       ${({ panel: panelView, venta: ventaView, inventario: invView, gastos: gastosView, reportes: repView, catalogos: catView, usuarios: usersView })[v]()}
     </div>
-    <nav class="tabbar">${NAV.filter(([k]) => role().views.includes(k)).slice(0, 5).map(([k, l]) => `<a href="#${k}" class="${v === k ? "active" : ""}">${I[k]}<span>${l}</span>${k === "inventario" && low ? `<span class="badge">${low}</span>` : ""}</a>`).join("")}</nav>
+    <div class="dock">
+      ${v === "venta" && S.cart.length ? cartBarHTML() : ""}
+      <nav class="tabbar">${NAV.filter(([k]) => role().views.includes(k)).slice(0, 5).map(([k, l]) => `<a href="#${k}" class="${v === k ? "active" : ""}">${I[k]}<span>${l}</span>${tabBadge(k, low)}</a>`).join("")}</nav>
+    </div>
   </div>`;
   bind();
   if (S.cartOpen) { if (v === "venta" && S.cart.length && window.innerWidth <= 900) $("#modal-root").innerHTML = `<div class="overlay"><div class="modal"><div class="modal-h"><h3>Carrito</h3><button class="btn icon ghost" data-close>${I.x}</button></div>${cartHTML()}</div></div>`; else { S.cartOpen = false; if (!$(".ticket")) closeModal(); } }
+}
+const cartCount = () => S.cart.reduce((a, c) => a + c.qty, 0);
+const tabBadge = (k, low) => k === "venta" && S.cart.length ? `<span class="badge dark">${cartCount()}</span>` : k === "inventario" && low ? `<span class="badge">${low}</span>` : "";
+// Barra del carrito (teléfono): pegada a la navegación, nunca tapa productos
+function cartBarHTML() {
+  const { total } = cartCalc(), n = cartCount();
+  const recent = S.lastAdd && Date.now() - S.lastAdd.at < 1800;
+  const thumbs = S.cart.slice(-3).reverse().map(c => ART.thumb(prodById(c.pid) || { cat: "" }, "cb-thumb")).join("");
+  return `<div class="cartbar ${recent ? "bump" : ""}">
+    <button class="cb-info" data-act="opencart" aria-label="Ver carrito, ${n} ${n === 1 ? "artículo" : "artículos"}">
+      <span class="cb-thumbs">${thumbs}${S.cart.length > 3 ? `<span class="cb-more">+${S.cart.length - 3}</span>` : ""}</span>
+      <span class="cb-txt"><b>${n} ${n === 1 ? "artículo" : "artículos"}${S.disc ? ` · −${S.disc.pct} %` : ""}</b><span class="cb-sub">${recent ? "+ " + esc(S.lastAdd.name) : "Ver carrito"}</span></span>
+    </button>
+    <button class="cb-pay" data-act="opencart">Cobrar <b>${money(total)}</b></button>
+  </div>`;
 }
 const topbar = (title, sub, right = "") => `<header class="topbar"><div><h1>${title}</h1><div class="sub">${sub}</div></div><div class="grow"></div>${right}<button class="btn icon hide-d" data-act="logout" title="Salir">${I.out}</button></header>`;
 
@@ -263,8 +281,7 @@ function ventaView() {
         ${DB.partners.length > 1 ? `<span class="hint who" style="gap:6px">${pDot(p.partner)}${esc(partnerById(p.partner).name)}</span>` : ""}<div class="vars">${p.variants.map(v => `<button data-add="${v.id}" ${v.stock <= 0 ? "disabled" : ""} class="${v.stock <= DB.settings.lowStock ? "low" : ""}" title="Código ${esc(v.code)} · stock ${v.stock}">${esc(v.size)} ${esc(v.color)} · ${v.stock}</button>`).join("")}</div></div>`).join("") || `<div class="empty">Sin resultados</div>`}</div>
     </section>
     <aside class="card cart-panel hide-m" style="padding:16px">${cartHTML()}</aside>
-  </div>
-  <button class="hide-d cart-fab" data-act="opencart" ${!S.cart.length ? "disabled" : ""}><span>${I.venta} Carrito · ${S.cart.reduce((a, c) => a + c.qty, 0)}</span><span>${money(total)}</span></button>`;
+  </div>`;
 }
 function cartHTML() {
   const { subtotal, amount, total } = cartCalc();
@@ -296,6 +313,8 @@ function addToCart(vid, scanned) {
   if (have + 1 > r.v.stock) return toast(`Solo hay ${r.v.stock} en stock`, true);
   if (inCart) inCart.qty++; else S.cart.push({ pid: r.p.id, vid, partner: r.p.partner, code: r.v.code, name: r.p.name, size: r.v.size, color: r.v.color, qty: 1, price: r.p.price, cost: r.p.cost });
   render();
+  S.lastAdd = { at: Date.now(), name: `${r.p.name} ${r.v.size}` };
+  clearTimeout(S._cbT); S._cbT = setTimeout(() => { const el = $(".cartbar .cb-sub"); if (el) el.textContent = "Ver carrito"; const bar = $(".cartbar"); if (bar) bar.classList.remove("bump"); }, 1800);
   if (scanned) { S.lastScan = { vid, at: Date.now() }; toast(`✓ ${r.p.name} ${r.v.size} ${r.v.color} · ${money(r.p.price)}`); }
 }
 function setQty(vid, d) {
