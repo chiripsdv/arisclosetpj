@@ -372,3 +372,28 @@ body{overscroll-behavior-x:none}
   .cb-pay{padding:0 12px;font-size:12px}
   .cb-pay b{font-size:14px}
 }
+
+/* Modales: nunca aplastar contenido, hacer scroll */
+.modal>*{flex-shrink:0}
+.modal{max-height:92dvh;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+.cobrar{flex-shrink:0;min-height:54px}
+.cart-foot-d{display:flex;flex-direction:column;gap:10px;padding-top:14px}
+.cf-disc{display:flex;flex-direction:column;gap:10px}
+.pay button span{white-space:nowrap}
+body.lock{overflow:hidden}
+
+/* Carrito en pantalla completa (teléfono) */
+.cart-screen{position:fixed;inset:0;z-index:40;background:var(--bg);display:flex;flex-direction:column;height:100dvh}
+.cs-h{flex-shrink:0;display:flex;align-items:center;gap:8px;padding:calc(10px + env(safe-area-inset-top)) 12px 10px 6px;background:#fff;border-bottom:1px solid var(--line)}
+.cs-title{flex:1;min-width:0;display:flex;flex-direction:column}
+.cs-title b{font-size:17px}
+.cs-title span{font-size:12px;color:var(--muted)}
+.cs-items{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;padding:4px 16px 16px;background:#fff}
+.cs-items .cart-item{padding:12px 0}
+.cs-more{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;height:46px;margin-top:12px;border:1px dashed var(--line);border-radius:12px;background:var(--bg);font-weight:600;color:var(--ink-2)}
+.cs-foot{flex-shrink:0;background:#fff;border-top:1px solid var(--line);box-shadow:0 -8px 24px rgba(17,17,17,.06);padding:12px 16px calc(12px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:10px}
+.cs-foot .totals{padding:0 2px;gap:2px}
+.cs-foot .pay button{height:40px}
+.cs-foot .disc-opts button{height:36px}
+@media (max-width:370px){.cs-foot .pay button svg{display:none}.cs-foot{gap:8px}}
+.cart-item .i b,.cart-item .i span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

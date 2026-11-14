@@ -131,6 +131,7 @@ const I = {
   down: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 21h16"/></svg>',
   out: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>',
   cam: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M7 8v8M10 8v8M13.5 8v8M17 8v8"/></svg>',
+  back: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>',
   edit: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>',
   phone: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M11 18h2"/></svg>',
   barcode: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M4 5v14M7 5v14M10.5 5v14M13 5v14M16.5 5v14M20 5v14"/></svg>',
@@ -170,7 +171,14 @@ function render() {
     </div>
   </div>`;
   bind();
-  if (S.cartOpen) { if (v === "venta" && S.cart.length && window.innerWidth <= 900) $("#modal-root").innerHTML = `<div class="overlay"><div class="modal"><div class="modal-h"><h3>Carrito</h3><button class="btn icon ghost" data-close>${I.x}</button></div>${cartHTML()}</div></div>`; else { S.cartOpen = false; if (!$(".ticket")) closeModal(); } }
+  if (S.cartOpen) {
+    if (v === "venta" && S.cart.length && window.innerWidth <= 900) {
+      const old = $(".cs-items"), top = old ? old.scrollTop : 0;
+      $("#modal-root").innerHTML = cartScreenHTML();
+      $(".cs-items").scrollTop = top;
+      document.body.classList.add("lock");
+    } else { S.cartOpen = false; if (!$(".ticket")) closeModal(); }
+  }
 }
 const cartCount = () => S.cart.reduce((a, c) => a + c.qty, 0);
 const tabBadge = (k, low) => k === "venta" && S.cart.length ? `<span class="badge dark">${cartCount()}</span>` : k === "inventario" && low ? `<span class="badge">${low}</span>` : "";
@@ -283,27 +291,45 @@ function ventaView() {
     <aside class="card cart-panel hide-m" style="padding:16px">${cartHTML()}</aside>
   </div>`;
 }
-function cartHTML() {
+function cartItemsHTML() {
+  return S.cart.length ? S.cart.map(c => `<div class="cart-item ${S.lastScan && S.lastScan.vid === c.vid && Date.now() - S.lastScan.at < 1500 ? "flash" : ""}">${ART.thumb(prodById(c.pid), "sm")}<div class="i"><b>${esc(c.name)}</b><span>${esc(c.size)} · ${esc(c.color)} · ${money(c.price)}</span></div>
+    <div class="qty"><button data-qty="${c.vid}|-1" aria-label="Quitar uno">−</button><b>${c.qty}</b><button class="plus" data-qty="${c.vid}|1" aria-label="Agregar uno">+</button></div></div>`).join("") : `<div class="empty">Tocá una talla o escaneá el código</div>`;
+}
+function cartFootHTML() {
   const { subtotal, amount, total } = cartCalc();
   const lim = role().maxDisc;
-  const n = S.cart.reduce((a, c) => a + c.qty, 0);
-  return `      <div class="row" style="padding:0 0 8px;border:none"><span class="section-title">Carrito · ${n} ${n === 1 ? "artículo" : "artículos"}</span>${S.cart.length ? `<button class="btn ghost sm" data-act="clearcart">Vaciar</button>` : ""}</div>
-      ${S.cart.length ? S.cart.map(c => `<div class="cart-item ${S.lastScan && S.lastScan.vid === c.vid && Date.now() - S.lastScan.at < 1500 ? "flash" : ""}">${ART.thumb(prodById(c.pid), "sm")}<div class="i"><b>${esc(c.name)}</b><span>${esc(c.size)} · ${esc(c.color)} · ${money(c.price)}</span></div>
-        <div class="qty"><button data-qty="${c.vid}|-1">−</button><b>${c.qty}</b><button class="plus" data-qty="${c.vid}|1">+</button></div></div>`).join("") : `<div class="empty">Tocá una talla o escaneá el código</div>`}
-      <div style="padding:14px 0 6px;display:flex;flex-direction:column;gap:10px">
-        <div class="row" style="padding:0;border:none"><span style="font-weight:600;display:inline-flex;gap:8px;align-items:center;color:var(--red)">${I.disc}<span style="color:var(--ink)">Descuento</span></span><span class="chip">Tu límite ${lim} %</span></div>
-        <div class="disc-opts">
-          <button data-disc="5" class="${S.disc && S.disc.type === "manual" && S.disc.pct === 5 ? "on" : ""}">5 %</button>
-          <button data-disc="10" class="${S.disc && S.disc.type === "manual" && S.disc.pct === 10 ? "on" : ""}" ${lim < 10 ? "disabled" : ""}>10 %</button>
-          <button data-act="code" class="${S.disc && S.disc.type === "codigo" ? "on" : ""}">Código</button>
-          <button data-act="pin" class="pin ${S.disc && S.disc.type === "pin" ? "on" : ""}">${I.lock} Con PIN</button>
-        </div>
-        ${S.disc ? `<div class="hint">Aplicado: ${S.disc.type === "codigo" ? "código " + esc(S.disc.code) + " (" + S.disc.pct + " %)" : S.disc.pct + " %" + (S.disc.type === "pin" ? " autorizado por " + esc(userById(S.disc.by).name) : "")} · <a href="#" data-act="nodisc" style="color:var(--red);font-weight:600">quitar</a></div>` : ""}
+  return `<div class="cf-disc">
+      <div class="row" style="padding:0;border:none"><span style="font-weight:600;display:inline-flex;gap:8px;align-items:center;color:var(--red)">${I.disc}<span style="color:var(--ink)">Descuento</span></span><span class="chip">Tu límite ${lim} %</span></div>
+      <div class="disc-opts">
+        <button data-disc="5" class="${S.disc && S.disc.type === "manual" && S.disc.pct === 5 ? "on" : ""}">5 %</button>
+        <button data-disc="10" class="${S.disc && S.disc.type === "manual" && S.disc.pct === 10 ? "on" : ""}" ${lim < 10 ? "disabled" : ""}>10 %</button>
+        <button data-act="code" class="${S.disc && S.disc.type === "codigo" ? "on" : ""}">Código</button>
+        <button data-act="pin" class="pin ${S.disc && S.disc.type === "pin" ? "on" : ""}">${I.lock} Con PIN</button>
       </div>
-      <div class="totals"><div><span>Subtotal</span><span>${money(subtotal)}</span></div>${amount ? `<div class="d"><span>Descuento ${S.disc.pct} %</span><span>− ${money(amount)}</span></div>` : ""}</div>
-      <div class="pay" style="margin-bottom:10px">${DB.payMethods.map(m => `<button data-pay="${esc(m)}" class="${S.pay === m ? "on" : ""}">${m === "Efectivo" ? I.cash : m === "Tarjeta" ? I.card : I.transfer}${esc(m)}</button>`).join("")}</div>
-      <button class="cobrar" data-act="cobrar" ${!S.cart.length ? "disabled" : ""}><span>Cobrar</span><span>${money(total)}</span></button>
-`;
+      ${S.disc ? `<div class="hint">Aplicado: ${S.disc.type === "codigo" ? "código " + esc(S.disc.code) + " (" + S.disc.pct + " %)" : S.disc.pct + " %" + (S.disc.type === "pin" ? " autorizado por " + esc(userById(S.disc.by).name) : "")} · <a href="#" data-act="nodisc" style="color:var(--red);font-weight:600">quitar</a></div>` : ""}
+    </div>
+    <div class="totals"><div><span>Subtotal</span><span>${money(subtotal)}</span></div>${amount ? `<div class="d"><span>Descuento ${S.disc.pct} %</span><span>− ${money(amount)}</span></div>` : ""}</div>
+    <div class="pay">${DB.payMethods.map(m => `<button data-pay="${esc(m)}" class="${S.pay === m ? "on" : ""}">${m === "Efectivo" ? I.cash : m === "Tarjeta" ? I.card : I.transfer}<span>${esc(m)}</span></button>`).join("")}</div>
+    <button class="cobrar" data-act="cobrar" ${!S.cart.length ? "disabled" : ""}><span>Cobrar</span><span>${money(total)}</span></button>`;
+}
+function cartHTML() {
+  const n = cartCount();
+  return `<div class="row" style="padding:0 0 8px;border:none"><span class="section-title">Carrito · ${n} ${n === 1 ? "artículo" : "artículos"}</span>${S.cart.length ? `<button class="btn ghost sm" data-act="clearcart">Vaciar</button>` : ""}</div>
+    ${cartItemsHTML()}
+    <div class="cart-foot-d">${cartFootHTML()}</div>`;
+}
+// Teléfono: el carrito es una pantalla completa con la lista desplazable y el cobro fijo abajo
+function cartScreenHTML() {
+  const n = cartCount();
+  return `<div class="cart-screen" role="dialog" aria-modal="true" aria-label="Carrito">
+    <header class="cs-h">
+      <button class="btn icon ghost" data-close aria-label="Volver a productos">${I.back}</button>
+      <div class="cs-title"><b>Carrito</b><span>${n} ${n === 1 ? "artículo" : "artículos"} · ${S.cart.length} ${S.cart.length === 1 ? "producto" : "productos"}</span></div>
+      <button class="btn ghost sm" data-act="clearcart">Vaciar</button>
+    </header>
+    <div class="cs-items">${cartItemsHTML()}<button class="cs-more" data-close>${I.plus} Seguir agregando</button></div>
+    <div class="cs-foot">${cartFootHTML()}</div>
+  </div>`;
 }
 function addToCart(vid, scanned) {
   const r = varById(vid); if (!r) return;
@@ -736,7 +762,7 @@ function modal(html, onSubmit) {
   $("#modal-root").innerHTML = `<div class="overlay"><div class="modal">${html}</div></div>`;
   const f = $("#f"); if (f) { f.onsubmit = (e) => { e.preventDefault(); const r = modalSubmit && modalSubmit(new FormData(f)); if (r !== false) closeModal(); }; const first = f.querySelector("input,select"); if (first && !matchMedia("(pointer:coarse)").matches) first.focus(); }
 }
-function closeModal() { stopCam(); $("#modal-root").innerHTML = ""; modalSubmit = null; }
+function closeModal() { stopCam(); $("#modal-root").innerHTML = ""; modalSubmit = null; document.body.classList.remove("lock"); }
 let toastT;
 function toast(msg, bad) { $("#toast-root").innerHTML = `<div class="toast ${bad ? "red" : ""}">${esc(msg)}</div>`; clearTimeout(toastT); toastT = setTimeout(() => $("#toast-root").innerHTML = "", 2800); }
 
@@ -751,8 +777,8 @@ function bind() {
 }
 document.addEventListener("click", (e) => {
   const t = e.target.closest("[data-act],[data-add],[data-qty],[data-disc],[data-pay],[data-inv],[data-rep],[data-reptab],[data-photo],[data-addcat],[data-delcat],[data-lim],[data-toggle],[data-partner],[data-editpartner],[data-delpartner],[data-assign],[data-editprod],[data-close]");
-  if (!t) { if (e.target.classList.contains("overlay")) closeModal(); return; }
-  if (t.dataset.close != null) { S.cartOpen = false; closeModal(); return; }
+  if (!t) { if (e.target.classList.contains("overlay")) { closeModal(); if (S.cartOpen) render(); } return; }
+  if (t.dataset.close != null) { if (t.closest(".cart-screen")) S.cartOpen = false; closeModal(); if (S.cartOpen) render(); return; }
   if (t.dataset.editprod) return editProdModal(t.dataset.editprod);
   if (t.dataset.partner) { S.partner = t.dataset.partner; return render(); }
   if (t.dataset.editpartner) return partnerModal(t.dataset.editpartner);
