@@ -1,8 +1,8 @@
 // Service worker: cachea la app para que abra sin internet.
 // Solo maneja archivos propios: la conexión del escáner (otro dominio) pasa directo.
-const CACHE = "aris-demo-v10";
+const CACHE = "aris-demo-v11";
 const FILES = ["./", "./index.html", "./styles.css", "./app.js", "./data.js", "./art.js", "./manifest.json",
-  "./icons/logo.png", "./icons/icon-192.png", "./icons/icon-512.png",
+  "./icons/logo.png", "./icons/logo-t.png", "./icons/icon-192.png", "./icons/icon-512.png",
   "./vendor/html5-qrcode.min.js", "./vendor/JsBarcode.all.min.js", "./vendor/qrcode.js"];
 self.addEventListener("install", (e) => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting())); });
 self.addEventListener("activate", (e) => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())); });

@@ -30,5 +30,14 @@ window.ART = (() => {
       img.onerror = rej; img.src = url;
     });
   }
-  return { thumb, compress };
+  // Íconos decorativos extra (fondo del login)
+  const deco = {
+    Gancho: line(`<path d="M50 30c0-6 10-6 10-12s-5-8-10-8-10 3-10 8"/><path d="M50 30L14 62c-3 3-1 8 3 8h66c4 0 6-5 3-8z"/>`),
+    Corazon: line(`<path d="M50 80S18 60 18 38c0-10 8-18 17-18 7 0 12 4 15 10 3-6 8-10 15-10 9 0 17 8 17 18 0 22-32 42-32 42z"/>`),
+    Destello: line(`<path d="M50 14c3 18 8 25 26 28-18 3-23 10-26 28-3-18-8-25-26-28 18-3 23-10 26-28z"/>`),
+    Labial: line(`<rect x="38" y="52" width="24" height="32" rx="3"/><path d="M40 52V36l20-10v26"/><path d="M38 64h24"/>`),
+    Lentes: line(`<circle cx="32" cy="56" r="13"/><circle cx="68" cy="56" r="13"/><path d="M45 54c3-3 7-3 10 0"/><path d="M19 52l-6-10M81 52l6-10"/>`)
+  };
+  const icon = (k) => shapes[k] || deco[k] || shapes.default;
+  return { thumb, compress, icon };
 })();

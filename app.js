@@ -198,9 +198,20 @@ function cartBarHTML() {
 const topbar = (title, sub, right = "") => `<header class="topbar"><div><h1>${title}</h1><div class="sub">${sub}</div></div><div class="grow"></div>${right}<button class="btn icon hide-d" data-act="logout" title="Salir">${I.out}</button></header>`;
 
 /* ---------- Login ---------- */
+// Fondo del login: prendas y accesorios como marca de agua, en posiciones fijas
+const LOGIN_DECO = [
+  ["Vestidos", 6, 8, 62, -12], ["Bolsos", 22, 3, 46, 10], ["Destello", 38, 10, 26, 0, 1], ["Tacones", 74, 6, 58, 14], ["Corazon", 90, 14, 30, -8, 1],
+  ["Gancho", 3, 30, 52, 8], ["Labial", 18, 22, 34, -16], ["Lentes", 86, 32, 48, -10], ["Blusas", 68, 24, 40, 6],
+  ["Sandalias", 8, 52, 50, -6], ["Corazon", 26, 44, 22, 12, 1], ["Carteras", 80, 50, 54, 8], ["Destello", 94, 46, 20, 0],
+  ["Faldas", 4, 74, 48, 10], ["Accesorios", 20, 66, 36, -10], ["Destello", 30, 86, 24, 0, 1], ["Pantalones", 70, 72, 46, -8],
+  ["Gancho", 88, 70, 44, -14], ["Tenis", 52, 90, 50, 6], ["Corazon", 14, 92, 26, -6], ["Bolsos", 92, 90, 42, 12, 1], ["Labial", 62, 4, 28, 18]
+];
+function loginPattern() {
+  return `<div class="login-bg" aria-hidden="true">${LOGIN_DECO.map(([k, x, y, sz, rot, red]) => `<span class="deco ${red ? "red" : ""}" style="left:${x}%;top:${y}%;--s:${sz};transform:translate(-50%,-50%) rotate(${rot}deg)">${ART.icon(k)}</span>`).join("")}</div>`;
+}
 function loginView() {
-  return `<div class="login"><form class="login-card" id="loginForm">
-    <img src="icons/logo.png" alt="Ari's Closet">
+  return `<div class="login">${loginPattern()}<form class="login-card" id="loginForm">
+    <div class="login-logo"><img src="icons/logo-t.png" alt="Ari's Closet"></div>
     <h1>Bienvenida</h1>
     <p>Entrá con tu usuario para abrir caja</p>
     <div class="field"><label>Usuario</label><select name="u">${DB.users.filter(u => u.active).map(u => `<option value="${u.id}">${esc(u.name)} · ${esc(DB.roles[u.role].label)}</option>`).join("")}</select></div>
