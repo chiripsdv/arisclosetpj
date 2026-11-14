@@ -25,6 +25,10 @@ function migrate() {
   DB.partners = DB.partners || JSON.parse(JSON.stringify(window.SEED.partners));
   DB.settings = Object.assign({ waCountry: "505", relay: DEFAULT_RELAY }, DB.settings);
   DB.products.forEach(p => { if (!p.partner) p.partner = DB.partners[0].id; });
+  const def = { propietaria: { seeAllSales: true, canSeeCost: true, canSeeProfit: true }, admin: { seeAllSales: true, canSeeCost: false, canSeeProfit: false }, vendedor: { seeAllSales: false, canSeeCost: false, canSeeProfit: false } };
+  Object.entries(DB.roles).forEach(([k, r]) => { const d = def[k] || def.vendedor; ["seeAllSales", "canSeeCost"].forEach(f => { if (r[f] === undefined) r[f] = d[f]; }); });
+  // La propietaria siempre lo ve todo
+  Object.assign(DB.roles.propietaria, { views: NAV_KEYS.slice(), seeAllSales: true, canSeeCost: true, canSeeProfit: true, canStockIn: true, canExpense: true, canEditCatalog: true, canUsers: true, canVoid: true, maxDisc: 100 });
   ensureCodes();
 }
 // Código de barras por variante: 7 dígitos, determinístico para los datos de ejemplo
@@ -105,7 +109,7 @@ const inPartner = (p) => S.partner === "all" || p.partner === S.partner;
 const lowStockP = () => lowStock().filter(x => inPartner(x.p));
 const pDot = (id) => `<span class="pdot" style="background:${esc(partnerById(id).color || "#7A7A76")}"></span>`;
 const partnerChip = (id) => `<span class="chip pchip">${pDot(id)}${esc(partnerById(id).name)}</span>`;
-const partnerSeg = () => DB.partners.length > 1 ? `<div class="seg partner-seg" role="group" aria-label="Socio">${[["all", "Consolidado"], ...DB.partners.map(p => [p.id, p.name])].map(([k, l]) => `<button data-partner="${k}" class="${S.partner === k ? "on" : ""}">${k !== "all" ? pDot(k) : ""}${esc(l)}</button>`).join("")}</div>` : "";
+const partnerSeg = () => DB.partners.length > 1 && can("seeAllSales") ? `<div class="seg partner-seg" role="group" aria-label="Socio">${[["all", "Consolidado"], ...DB.partners.map(p => [p.id, p.name])].map(([k, l]) => `<button data-partner="${k}" class="${S.partner === k ? "on" : ""}">${k !== "all" ? pDot(k) : ""}${esc(l)}</button>`).join("")}</div>` : "";
 const partnerOpts = (sel, withShared) => (withShared ? `<option value="shared" ${sel === "shared" ? "selected" : ""}>Compartido (según %)</option>` : "") + DB.partners.map(p => `<option value="${p.id}" ${sel === p.id ? "selected" : ""}>${esc(p.name)}</option>`).join("");
 
 /* ---------- Iconos ---------- */
@@ -140,6 +144,7 @@ const I = {
   install: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M12 7v7M9 11l3 3 3-3"/></svg>',
   wa: '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm0 18.2a8.2 8.2 0 0 1-4.2-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8s-.4-.1-.6.1-.6.8-.8 1-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.3-.4.2-.4.7-1.3.1-.2 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-.9 2.2 5.2 5.2 0 0 0 1.1 2.8 12 12 0 0 0 4.6 4.1c1.7.7 2.4.8 3.2.7a2.8 2.8 0 0 0 1.8-1.3 2.2 2.2 0 0 0 .2-1.3c-.1-.1-.3-.2-.5-.3z"/></svg>'
 };
+const NAV_KEYS = ["panel", "venta", "inventario", "gastos", "reportes", "catalogos", "usuarios"];
 const NAV = [["panel","Panel"],["venta","Vender"],["inventario","Inventario"],["gastos","Gastos"],["reportes","Reportes"],["catalogos","Catálogos"],["usuarios","Usuarios"]];
 
 /* ---------- Render raíz ---------- */
@@ -150,7 +155,8 @@ function render() {
   if (!me) { app.innerHTML = loginView(); bindLogin(); return; }
   const v = view();
   const low = lowStock().length;
-  const todayTotal = salesOf(today()).reduce((a, s) => a + s.total, 0);
+  const todaySales = salesOf(today()).filter(x => can("seeAllSales") || x.seller === me.id);
+  const todayTotal = todaySales.reduce((a, s) => a + s.total, 0);
   app.innerHTML = `
   <div class="shell ${v === "venta" && S.cart.length ? "has-cart" : ""}">
     <aside class="sidebar">
@@ -158,7 +164,7 @@ function render() {
       <nav class="nav">${NAV.filter(([k]) => role().views.includes(k)).map(([k, l]) => `<a href="#${k}" class="${v === k ? "active" : ""}">${I[k]}<span>${l}</span>${tabBadge(k, low)}</a>`).join("")}</nav>
       <div class="side-foot">
         ${installHTML()}
-        <div class="cashbox"><small>Caja de hoy</small><b>${money(todayTotal)}</b><small>${salesOf(today()).length} tickets</small></div>
+        <div class="cashbox"><small>${can("seeAllSales") ? "Caja de hoy" : "Mis ventas de hoy"}</small><b>${money(todayTotal)}</b><small>${todaySales.length} tickets · ${todaySales.reduce((a, x) => a + x.items.reduce((b, i) => b + i.qty, 0), 0)} uds.</small></div>
         <div class="me"><span class="avatar ${me.role === "propietaria" ? "red" : ""}">${esc(me.name.slice(0, 2).toUpperCase())}</span><div><b>${esc(me.name)}</b><span>${esc(role().label)}</span></div><button title="Salir" data-act="logout">${I.out}</button></div>
       </div>
     </aside>
@@ -227,6 +233,7 @@ function bindLogin() {
 
 /* ---------- Panel ---------- */
 function panelView() {
+  if (!can("seeAllSales")) return myPanelView();
   const t = today(), s = scoped(salesOf(t));
   const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 7);
   const lastWeek = scoped(salesOf(dayOf(yesterday))).reduce((a, x) => a + x.total, 0);
@@ -278,6 +285,45 @@ function panelView() {
   </div>`;
 }
 const discChip = (d) => d ? `<span class="chip red">${d.type === "codigo" ? "Código " + esc(d.code) : d.type === "pin" ? d.pct + " % con PIN" : d.pct + " % manual"}</span>` : `<span style="color:var(--faint)">—</span>`;
+
+// Panel de quien solo ve lo suyo: lo vendido, unidades y stock. Sin costos, márgenes ni caja de la tienda.
+function myPanelView() {
+  const t = today(), mine = (d) => salesOf(d).filter(x => x.seller === me.id);
+  const s = mine(t), units = s.reduce((a, x) => a + x.items.reduce((b, i) => b + i.qty, 0), 0), total = s.reduce((a, x) => a + x.total, 0);
+  const week = []; for (let i = 6; i >= 0; i--) { const d = new Date(); d.setDate(d.getDate() - i); week.push(dayOf(d)); }
+  const ws = week.map(d => mine(d)), wTotal = ws.flat().reduce((a, x) => a + x.total, 0), wUnits = ws.flat().reduce((a, x) => a + x.items.reduce((b, i) => b + i.qty, 0), 0);
+  const top = {}; s.forEach(x => x.items.forEach(i => { const k = `${i.name}\u0001${i.size} ${i.color}`; top[k] = top[k] || { q: 0, t: 0 }; top[k].q += i.qty; top[k].t += i.price * i.qty; }));
+  const topL = Object.entries(top).sort((a, b) => b[1].q - a[1].q);
+  const list = s.slice().sort((a, b) => b.at.localeCompare(a.at));
+  const perDay = ws.map(x => x.reduce((a, y) => a + y.items.reduce((b, i) => b + i.qty, 0), 0)), pmax = Math.max(1, ...perDay);
+  return topbar("Mis ventas", fmtDL(new Date()), `<a href="#venta" class="btn red">${I.plus}<span class="hide-m">Nueva venta</span></a>`) + `
+  <div class="content">
+    <section class="kpis">
+      <div class="card kpi"><div class="lbl">Vendido hoy<span class="ico">${I.trend}</span></div><div class="val">${money(total)}</div><div class="foot">${s.length} ${s.length === 1 ? "venta" : "ventas"}</div></div>
+      <div class="card kpi"><div class="lbl">Unidades hoy<span class="ico">${I.inventario}</span></div><div class="val">${units}</div><div class="foot">${s.length ? (units / s.length).toFixed(1) + " por venta" : "Todavía sin ventas"}</div></div>
+      <div class="card kpi"><div class="lbl">Vendido en 7 días<span class="ico">${I.ticket}</span></div><div class="val">${money(wTotal)}</div><div class="foot">${wUnits} unidades</div></div>
+      <div class="card kpi"><div class="lbl">Stock bajo<span class="ico red">${I.warn}</span></div><div class="val red">${lowStock().length}</div><div class="foot">variantes por agotarse</div></div>
+    </section>
+    <div class="grid-2">
+      <div class="stack">
+        <section class="card"><div class="card-h"><h2>Mis ventas de hoy</h2><span class="hint">${s.length} · ${money(total)}</span></div>
+          <div class="tbl-wrap live-list"><table><thead><tr><th>Hora</th><th>Ticket</th><th>Artículos</th><th class="r">Uds.</th><th>Pago</th><th class="r">Total</th></tr></thead><tbody>
+          ${list.length ? list.map((x, i) => `<tr class="${i === 0 ? "hl" : ""}"><td><b>${fmtT(x.at)}</b></td><td style="color:var(--muted)">#${x.n}</td><td>${esc(x.items.map(i => `${i.qty > 1 ? i.qty + " × " : ""}${i.name} ${i.size}`).join(", "))}</td><td class="r">${x.items.reduce((a, i) => a + i.qty, 0)}</td><td><span class="chip">${esc(x.pay)}</span></td><td class="r"><b>${money(x.total)}</b></td></tr>`).join("") : `<tr><td colspan="6" class="empty">Todavía no vendiste hoy. ¡A vender!</td></tr>`}
+          </tbody></table></div></section>
+        <section class="card"><div class="card-h"><h2>Lo que vendí hoy</h2><span class="hint">por producto</span></div>
+          <div class="tbl-wrap"><table><thead><tr><th>Producto</th><th>Variante</th><th class="r">Uds.</th><th class="r">Vendido</th></tr></thead><tbody>
+          ${topL.map(([k, v]) => { const [n, vr] = k.split("\u0001"); return `<tr><td><b>${esc(n)}</b></td><td>${esc(vr)}</td><td class="r">${v.q}</td><td class="r">${money(v.t)}</td></tr>`; }).join("") || `<tr><td colspan="4" class="empty">Sin ventas hoy</td></tr>`}
+          </tbody></table></div></section>
+      </div>
+      <div class="stack">
+        <section class="card"><div class="card-h"><h2>Mis unidades · 7 días</h2></div><div class="card-b"><div class="mini-chart" style="height:90px">${perDay.map((v, i) => `<i class="${i === perDay.length - 1 ? "red" : ""}" style="height:${v / pmax * 100}%" title="${week[i]} · ${v} uds."></i>`).join("")}</div><div class="row" style="border:none;padding:6px 0 0"><span class="hint">${fmtD(week[0])}</span><span class="hint">hoy</span></div></div></section>
+        <section class="card"><div class="card-h"><h2>${I.warn} Stock bajo</h2><span class="badge">${lowStock().length}</span></div>
+          <div class="card-b list" style="padding-top:4px;padding-bottom:4px">${lowStock().slice(0, 8).map(({ p, v }) => `<div class="row"><span><span class="t">${esc(p.name)}</span><span class="s">${esc(v.size)} · ${esc(v.color)}</span></span><span class="chip ${v.stock === 0 ? "solid-red" : v.stock <= 1 ? "red" : ""}">${v.stock}</span></div>`).join("") || `<div class="empty">Todo con stock suficiente</div>`}</div>
+          <div style="padding:0 18px 18px"><a href="#inventario" class="btn outline block">Ver todo el inventario</a></div></section>
+      </div>
+    </div>
+  </div>`;
+}
 
 /* ---------- Punto de venta ---------- */
 function cartCalc() {
@@ -437,12 +483,12 @@ function invView() {
   else if (S.invFilter !== "Todo") { const shoes = ["Sandalias", "Tacones", "Tenis"], bags = ["Bolsos", "Carteras", "Accesorios"]; prods = prods.filter(p => S.invFilter === "Calzado" ? shoes.includes(p.cat) : S.invFilter === "Bolsos y accesorios" ? bags.includes(p.cat) : !shoes.includes(p.cat) && !bags.includes(p.cat)); }
   const pieces = DB.products.filter(inPartner).reduce((a, p) => a + p.variants.reduce((b, v) => b + v.stock, 0), 0);
   const value = DB.products.filter(inPartner).reduce((a, p) => a + p.variants.reduce((b, v) => b + v.stock * p.cost, 0), 0);
-  return topbar("Inventario", `${pieces} piezas${can("canSeeProfit") ? " · valor al costo " + money(value) : ""}`, can("canStockIn") ? `<button class="btn" data-act="labels" title="Imprimir etiquetas con código de barras">${I.barcode}<span class="hide-m">Etiquetas</span></button><button class="btn" data-act="stockin">${I.plus}<span class="hide-m">Entrada</span></button>${can("canEditCatalog") ? `<button class="btn dark" data-act="newprod">${I.plus}<span class="hide-m">Producto</span></button>` : ""}` : "") + `
+  return topbar("Inventario", `${pieces} piezas${can("canSeeCost") ? " · valor al costo " + money(value) : ""}`, `${can("canStockIn") ? `<button class="btn" data-act="labels" title="Imprimir etiquetas con código de barras">${I.barcode}<span class="hide-m">Etiquetas</span></button><button class="btn" data-act="stockin">${I.plus}<span class="hide-m">Entrada</span></button>` : ""}${can("canEditCatalog") ? `<button class="btn dark" data-act="newprod">${I.plus}<span class="hide-m">Producto</span></button>` : ""}`) + `
   <div class="content" style="gap:12px">
     ${partnerSeg()}
     <div class="search full">${I.search}<input id="invQ" placeholder="Producto, marca, categoría o código" value="${esc(S.invQ)}"></div>
     <div class="seg">${["Todo", "Ropa", "Calzado", "Bolsos y accesorios", "Stock bajo"].map(f => `<button data-inv="${f}" class="${S.invFilter === f ? "on" + (f === "Stock bajo" ? " red" : "") : ""}">${f}${f === "Stock bajo" ? " · " + lowStockP().length : ""}</button>`).join("")}</div>
-    <div class="inv-grid">${prods.map(p => { const st = p.variants.reduce((a, v) => a + v.stock, 0); return `<div class="card inv-item"><div class="inv-top"><button class="art-btn" data-photo="${p.id}" title="${can("canEditCatalog") ? "Cambiar foto" : ""}" ${can("canEditCatalog") ? "" : "disabled"}>${ART.thumb(p, "sm")}</button><div class="i"><b>${esc(p.name)}</b><span>${esc(p.brand)} · ${money(p.price)}${can("canSeeProfit") ? " · costo " + money(p.cost) : ""}</span>${DB.partners.length > 1 ? `<span class="who" style="gap:6px;margin-top:3px">${pDot(p.partner)}${esc(partnerById(p.partner).name)}</span>` : ""}</div><div class="n"><b>${st}</b><span>en stock</span></div></div>
+    <div class="inv-grid">${prods.map(p => { const st = p.variants.reduce((a, v) => a + v.stock, 0); return `<div class="card inv-item"><div class="inv-top"><button class="art-btn" data-photo="${p.id}" title="${can("canEditCatalog") ? "Cambiar foto" : ""}" ${can("canEditCatalog") ? "" : "disabled"}>${ART.thumb(p, "sm")}</button><div class="i"><b>${esc(p.name)}</b><span>${esc(p.brand)} · ${money(p.price)}${can("canSeeCost") ? " · costo " + money(p.cost) : ""}</span>${DB.partners.length > 1 ? `<span class="who" style="gap:6px;margin-top:3px">${pDot(p.partner)}${esc(partnerById(p.partner).name)}</span>` : ""}</div><div class="n"><b>${st}</b><span>en stock</span></div></div>
       <div class="vchips">${p.variants.map(v => `<span class="chip ${v.stock === 0 ? "solid-red" : v.stock <= DB.settings.lowStock ? "red" : ""}" title="Código ${esc(v.code)}">${esc(v.size)} ${esc(v.color)} · ${v.stock}</span>`).join("")}</div>${can("canEditCatalog") ? `<button class="btn sm edit-btn" data-editprod="${p.id}">${I.edit} Editar</button>` : ""}</div>`; }).join("") || `<div class="empty">Sin productos</div>`}</div>
   </div>`;
 }
@@ -490,7 +536,7 @@ function editProdModal(id) {
     <div class="field full"><label>Nombre</label><input name="name" required value="${esc(p.name)}"></div>
     <div class="field"><label>Categoría</label><select name="cat">${DB.categories.map(c => `<option ${c === p.cat ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></div>
     <div class="field"><label>Marca</label><select name="brand">${DB.brands.map(c => `<option ${c === p.brand ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></div>
-    <div class="field"><label>Costo</label><input name="cost" type="number" min="0" required value="${p.cost}"></div>
+    ${can("canSeeCost") ? `<div class="field"><label>Costo</label><input name="cost" type="number" min="0" required value="${p.cost}"></div>` : `<input type="hidden" name="cost" value="${p.cost}">`}
     <div class="field"><label>Precio de venta</label><input name="price" type="number" min="0" required value="${p.price}"></div>
     <div class="field full"><label>Socio dueño</label><select name="partner">${partnerOpts(p.partner)}</select></div>
     <div class="field full"><label>Tallas y colores</label>
@@ -521,7 +567,7 @@ function newProdModal() {
   <div class="field"><label>Categoría</label><select name="cat">${DB.categories.map(c => `<option>${esc(c)}</option>`).join("")}</select></div>
   <div class="field"><label>Marca</label><select name="brand">${DB.brands.map(c => `<option>${esc(c)}</option>`).join("")}</select></div>
   <div class="field full"><label>Socio dueño</label><select name="partner">${partnerOpts(S.partner !== "all" ? S.partner : DB.partners[0].id)}</select></div>
-  <div class="field"><label>Costo</label><input name="cost" type="number" min="0" required></div>
+  ${can("canSeeCost") ? `<div class="field"><label>Costo</label><input name="cost" type="number" min="0" required></div>` : `<input type="hidden" name="cost" value="0"><div class="field"><label>Costo</label><span class="hint" style="padding-top:10px">Lo completa la propietaria.</span></div>`}
   <div class="field"><label>Precio de venta</label><input name="price" type="number" min="0" required></div>
   <div class="field"><label>Tallas (separadas por coma)</label><input name="sizes" value="S, M, L" required></div>
   <div class="field"><label>Colores (separados por coma)</label><input name="colors" value="Negro" required></div>
@@ -542,7 +588,7 @@ function gastosView() {
   const month = today().slice(0, 7);
   const mt = scopedExp(DB.expenses).filter(e => e.day.startsWith(month)).reduce((a, e) => a + e.amount, 0);
   const byCat = DB.expenseCats.map(c => ({ c, t: scopedExp(DB.expenses).filter(e => e.day.startsWith(month) && e.cat === c).reduce((a, e) => a + e.amount, 0) })).filter(x => x.t > 0).sort((a, b) => b.t - a.t);
-  return topbar("Gastos", `Este mes: ${money(mt)}`, `<button class="btn dark" data-act="newexp">${I.plus}<span class="hide-m">Registrar gasto</span></button>`) + `
+  return topbar("Gastos", `Este mes: ${money(mt)}`, can("canExpense") ? `<button class="btn dark" data-act="newexp">${I.plus}<span class="hide-m">Registrar gasto</span></button>` : "") + `
   <div class="content">${partnerSeg()}${S.partner !== "all" ? `<div class="hint">Gastos propios de ${esc(partnerById(S.partner).name)} más su ${partnerById(S.partner).share} % de los gastos compartidos.</div>` : ""}<div class="grid-2">
     <section class="card"><div class="card-h"><h2>Movimientos</h2></div><div class="tbl-wrap"><table><thead><tr><th>Fecha</th><th>Categoría</th><th>Detalle</th><th>Socio</th><th>Registró</th><th class="r">Monto</th></tr></thead><tbody>
     ${list.map(e => `<tr><td>${fmtD(e.at)}</td><td><span class="chip">${esc(e.cat)}</span></td><td>${esc(e.note)}</td><td>${partnerChip(e.partner || "shared")}</td><td>${esc(userById(e.by).name)}</td><td class="r"><b>${money(e.amount)}</b></td></tr>`).join("") || `<tr><td colspan="6" class="empty">Sin gastos</td></tr>`}</tbody></table></div></section>
@@ -569,7 +615,8 @@ function rangeDays() {
 }
 function repData() {
   const days = rangeDays(), set = new Set(days);
-  const s = scoped(DB.sales.filter(x => set.has(x.day) && x.status === "cerrada")), e = scopedExp(DB.expenses.filter(x => set.has(x.day)));
+  const all = can("seeAllSales");
+  const s = scoped(DB.sales.filter(x => set.has(x.day) && x.status === "cerrada" && (all || x.seller === me.id))), e = all ? scopedExp(DB.expenses.filter(x => set.has(x.day))) : [];
   const total = s.reduce((a, x) => a + x.total, 0), gross = s.reduce((a, x) => a + x.subtotal, 0), cost = s.reduce((a, x) => a + x.items.reduce((b, i) => b + i.cost * i.qty, 0), 0), exp = e.reduce((a, x) => a + x.amount, 0), disc = s.reduce((a, x) => a + (x.discount ? x.discount.amount : 0), 0);
   // líneas: el descuento del ticket se prorratea por línea según su peso
   const lines = []; s.forEach(x => { const f = x.subtotal ? x.total / x.subtotal : 1; x.items.forEach(i => lines.push({ ...i, sale: x, gross: i.price * i.qty, net: Math.round(i.price * i.qty * f), disc: Math.round(i.price * i.qty * (1 - f)), costT: i.cost * i.qty, partner: itemPartner(i), cat: (prodById(i.pid) || {}).cat || "—", brand: (prodById(i.pid) || {}).brand || "—" })); });
@@ -578,12 +625,14 @@ function repData() {
 }
 function repView() {
   const D = repData(); const { days, s, e, total, gross, cost, exp, disc } = D;
-  const tab = S.repTab || "resumen"; const P = can("canSeeProfit");
-  const tabs = [["resumen", "Resumen"], ...(DB.partners.length > 1 ? [["socios", "Socios"]] : []), ["producto", "Por producto"], ["categoria", "Categorías"], ["vendedora", "Vendedoras"], ["tickets", "Tickets"], ["inventario", "Inventario"], ["movimientos", "Movimientos"]];
+  let tab = S.repTab || "resumen"; const P = can("canSeeProfit");
+  const tabs = can("seeAllSales") ? [["resumen", "Resumen"], ...(DB.partners.length > 1 ? [["socios", "Socios"]] : []), ["producto", "Por producto"], ["categoria", "Categorías"], ["vendedora", "Vendedoras"], ["tickets", "Tickets"], ["inventario", "Inventario"], ["movimientos", "Movimientos"]]
+    : [["resumen", "Resumen"], ["producto", "Por producto"], ["tickets", "Tickets"]];
   const mcell = (g) => P ? `<td class="r">${money(g.margin)}</td><td class="r"><span class="chip ${g.pct >= 40 ? "green" : g.pct >= 20 ? "" : "red"}">${g.pct.toFixed(0)} %</span></td>` : "";
   const mhead = P ? `<th class="r">Margen</th><th class="r">%</th>` : "";
   const tbl = (head, rows, empty = "Sin datos") => `<div class="tbl-wrap"><table><thead><tr>${head}</tr></thead><tbody>${rows.join("") || `<tr><td colspan="12" class="empty">${empty}</td></tr>`}</tbody></table></div>`;
   const perDay = days.map(d => s.filter(x => x.day === d).reduce((a, x) => a + x.total, 0)); const pmax = Math.max(1, ...perDay);
+  if (!tabs.some(([k]) => k === tab)) tab = "resumen";
   let body = "";
   if (tab === "resumen") {
     const byPay = DB.payMethods.map(m => ({ m, t: s.filter(x => x.pay === m).reduce((a, x) => a + x.total, 0) }));
@@ -684,7 +733,6 @@ function catView() {
       ${DB.partners.reduce((a, p) => a + (+p.share || 0), 0) !== 100 ? `<div class="err" style="padding:8px 0">Los % de gastos compartidos suman ${DB.partners.reduce((a, p) => a + (+p.share || 0), 0)} %; deberían sumar 100 %.</div>` : ""}
     </div></section>
     ${list("Códigos de descuento", "discountCodes", DB.discountCodes, d => `<span><span class="t">${esc(d.code)}</span><span class="s">${d.pct} % · ${d.uses} de ${d.maxUses} usos</span></span><span class="chip ${d.active && d.uses < d.maxUses ? "green" : "red"}">${d.active && d.uses < d.maxUses ? "Activo" : "Agotado"}</span>`)}
-    <section class="card"><div class="card-h"><h2>Límites de descuento por rol</h2></div><div class="card-b list" style="padding-top:4px;padding-bottom:4px">${Object.entries(DB.roles).map(([k, r]) => `<div class="row"><span class="t">${esc(r.label)}</span>${me.role === "propietaria" ? `<span class="qty"><button data-lim="${k}|-5">−</button><b style="width:48px">${r.maxDisc} %</b><button class="plus" data-lim="${k}|5">+</button></span>` : `<span class="chip">${r.maxDisc} %</span>`}</div>`).join("")}</div></section>
     ${list("Categorías", "categories", DB.categories, c => `<span class="t">${esc(c)}</span>`)}
     ${list("Marcas", "brands", DB.brands, c => `<span class="t">${esc(c)}</span>`)}
     ${list("Formas de pago", "payMethods", DB.payMethods, c => `<span class="t">${esc(c)}</span>`)}
@@ -725,9 +773,53 @@ function usersView() {
     <td>${DB.roles[u.role].maxDisc} %</td><td><span class="chip ${u.active ? "green" : "red"}">${u.active ? "Activo" : "Inactivo"}</span></td>
     <td class="r">${u.id !== me.id ? `<button class="btn sm" data-toggle="${u.id}">${u.active ? "Desactivar" : "Activar"}</button>` : `<span class="hint">vos</span>`}</td></tr>`).join("")}
   </tbody></table></div></section>
-  <section class="card"><div class="card-h"><h2>Qué puede hacer cada rol</h2></div><div class="tbl-wrap"><table><thead><tr><th>Acción</th>${Object.values(DB.roles).map(r => `<th>${esc(r.label)}</th>`).join("")}</tr></thead><tbody>
-  ${[["Registrar ventas", () => true], ["Descuento dentro de su límite", () => true], ["Descuento mayor (con PIN)", r => r.maxDisc >= 100 ? "Autoriza" : "Pide PIN"], ["Panel en tiempo real", r => r.views.includes("panel") ? (r.canSeeProfit ? "Completo" : "Sin utilidad") : false], ["Entradas de inventario", r => r.canStockIn], ["Registrar gastos", r => r.canExpense], ["Reportes", r => r.views.includes("reportes")], ["Ver utilidad", r => r.canSeeProfit], ["Editar catálogos", r => r.canEditCatalog], ["Usuarios y límites", r => r.canUsers]].map(([a, f]) => `<tr><td>${a}</td>${Object.values(DB.roles).map(r => { const v = f(r); return `<td>${v === true ? `<span class="chip green">Sí</span>` : v === false ? `<span class="chip">No</span>` : `<span class="chip">${v}</span>`}</td>`; }).join("")}</tr>`).join("")}
-  </tbody></table></div></section></div>`;
+  ${permsHTML()}
+  </div>`;
+}
+// Permisos por rol, editables por la propietaria
+const PERMS = [
+  ["Pantallas", null],
+  ["Panel", "v:panel", "Las ventas del día. Si no ve todas las ventas, ve solo las suyas."],
+  ["Vender", "v:venta"],
+  ["Inventario (stock)", "v:inventario"],
+  ["Gastos", "v:gastos"],
+  ["Reportes", "v:reportes"],
+  ["Catálogos y ajustes", "v:catalogos"],
+  ["Información", null],
+  ["Ver las ventas de todos", "seeAllSales", "Si está apagado, solo ve sus propias ventas."],
+  ["Ver costos de los productos", "canSeeCost"],
+  ["Ver utilidad y márgenes", "canSeeProfit", "Utilidad, margen y estado de resultados."],
+  ["Acciones", null],
+  ["Registrar entradas de inventario", "canStockIn"],
+  ["Registrar gastos", "canExpense"],
+  ["Crear y editar productos y catálogos", "canEditCatalog"],
+  ["Descuento máximo sin PIN", "maxDisc"]
+];
+function permsHTML() {
+  const roles = Object.entries(DB.roles);
+  const cell = (k, r, key) => {
+    if (k === "propietaria") return key === "maxDisc" ? `<span class="chip">100 %</span>` : `<span class="chip green">Siempre</span>`;
+    if (key === "maxDisc") return `<span class="qty"><button data-lim="${k}|-5" aria-label="Menos">−</button><b style="width:48px">${r.maxDisc} %</b><button class="plus" data-lim="${k}|5" aria-label="Más">+</button></span>`;
+    const on = key.startsWith("v:") ? r.views.includes(key.slice(2)) : !!r[key];
+    return `<label class="switch" title="${on ? "Permitido" : "No permitido"}"><input type="checkbox" data-perm="${k}|${key}" ${on ? "checked" : ""}><span></span></label>`;
+  };
+  return `<section class="card"><div class="card-h"><h2>Permisos por rol</h2><span class="hint">los cambios se aplican al instante</span></div>
+    <div class="tbl-wrap"><table class="perms"><thead><tr><th>Permiso</th>${roles.map(([, r]) => `<th class="c">${esc(r.label)}</th>`).join("")}</tr></thead><tbody>
+    ${PERMS.map(([label, key, help]) => key === null ? `<tr class="grp"><td colspan="${roles.length + 1}">${label}</td></tr>`
+      : `<tr><td><b>${label}</b>${help ? `<span class="s">${help}</span>` : ""}</td>${roles.map(([k, r]) => `<td class="c">${cell(k, r, key)}</td>`).join("")}</tr>`).join("")}
+    <tr><td><b>Usuarios y permisos</b><span class="s">Solo la propietaria.</span></td>${roles.map(([k]) => `<td class="c">${k === "propietaria" ? `<span class="chip green">Siempre</span>` : `<span class="chip">No</span>`}</td>`).join("")}</tr>
+    </tbody></table></div></section>`;
+}
+function setPerm(roleKey, key, on) {
+  const r = DB.roles[roleKey]; if (!r || roleKey === "propietaria") return;
+  if (key.startsWith("v:")) {
+    const v = key.slice(2);
+    if (!on && r.views.length <= 1) { toast("Cada rol necesita al menos una pantalla", true); return render(); }
+    r.views = on ? NAV_KEYS.filter(k => k === v || r.views.includes(k)) : r.views.filter(k => k !== v);
+  } else r[key] = on;
+  if (key === "canSeeProfit" && on) r.canSeeCost = true;
+  if (key === "canSeeCost" && !on) r.canSeeProfit = false;
+  save(); render(); toast(`${r.label}: permiso ${on ? "activado" : "quitado"}`);
 }
 function newUserModal() {
   modal(`<div class="modal-h"><h3>Nuevo usuario</h3><button class="btn icon ghost" data-close>${I.x}</button></div><form id="f" class="form">
@@ -784,6 +876,7 @@ function bind() {
   const invQ = $("#invQ"); if (invQ) invQ.oninput = (e) => { S.invQ = e.target.value; const pos = e.target.selectionStart; render(); const n = $("#invQ"); n.focus(); n.setSelectionRange(pos, pos); };
   const sim = $("#simToggle"); if (sim) sim.onchange = (e) => { S.sim = e.target.checked; toast(S.sim ? "Simulando ventas de otros dispositivos…" : "Simulación detenida"); };
   const sf = $("#settingsForm"); if (sf) sf.onsubmit = (e) => { e.preventDefault(); const f = new FormData(sf); Object.assign(DB.settings, { store: f.get("store"), currency: f.get("currency"), lowStock: +f.get("lowStock"), minMargin: +f.get("minMargin"), waCountry: f.get("waCountry").replace(/\D/g, ""), relay: f.get("relay").trim() || DEFAULT_RELAY }); stopScanner(); listenScanner(); save(); render(); toast("Ajustes guardados"); };
+  app.querySelectorAll("[data-perm]").forEach(i => i.onchange = (e) => { const [k, key] = e.target.dataset.perm.split("|"); setPerm(k, key, e.target.checked); });
   app.querySelectorAll("[data-role]").forEach(s => s.onchange = (e) => { userById(e.target.dataset.role).role = e.target.value; save(); render(); toast("Rol actualizado"); });
 }
 document.addEventListener("click", (e) => {
@@ -803,7 +896,7 @@ document.addEventListener("click", (e) => {
   if (t.dataset.reptab) { S.repTab = t.dataset.reptab; return render(); }
   if (t.dataset.addcat) return addCatModal(t.dataset.addcat);
   if (t.dataset.delcat) { const [k, i] = t.dataset.delcat.split("|"); DB[k].splice(+i, 1); save(); return render(); }
-  if (t.dataset.lim) { const [k, d] = t.dataset.lim.split("|"); DB.roles[k].maxDisc = Math.min(100, Math.max(0, DB.roles[k].maxDisc + +d)); save(); return render(); }
+  if (t.dataset.lim) { if (me.role !== "propietaria") return; const [k, d] = t.dataset.lim.split("|"); if (k === "propietaria") return; DB.roles[k].maxDisc = Math.min(100, Math.max(0, DB.roles[k].maxDisc + +d)); save(); return render(); }
   if (t.dataset.photo) { const inp = document.createElement("input"); inp.type = "file"; inp.accept = "image/*"; inp.onchange = async () => { const f = inp.files[0]; if (!f) return; try { prodById(t.dataset.photo).photo = await ART.compress(f); save(); render(); toast("Foto actualizada"); } catch { toast("No se pudo leer la imagen", true); } }; inp.click(); return; }
   if (t.dataset.toggle) { const u = userById(t.dataset.toggle); u.active = !u.active; save(); return render(); }
   const a = t.dataset.act;

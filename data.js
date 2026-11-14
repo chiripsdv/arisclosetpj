@@ -12,9 +12,9 @@ window.SEED = {
     { id: "u3", name: "José", email: "jose@arischoset.com", role: "vendedor", pin: "", pass: "1234", active: true }
   ],
   roles: {
-    propietaria: { label: "Propietaria", maxDisc: 100, views: ["panel","venta","inventario","gastos","reportes","catalogos","usuarios"], canEditCatalog: true, canSeeProfit: true, canExpense: true, canStockIn: true, canUsers: true, canVoid: true },
-    admin:       { label: "Administradora", maxDisc: 15, views: ["panel","venta","inventario","gastos","reportes","catalogos"], canEditCatalog: true, canSeeProfit: false, canExpense: true, canStockIn: true, canUsers: false, canVoid: true },
-    vendedor:    { label: "Vendedor", maxDisc: 10, views: ["venta","inventario","panel"], canEditCatalog: false, canSeeProfit: false, canExpense: false, canStockIn: false, canUsers: false, canVoid: false }
+    propietaria: { label: "Propietaria", maxDisc: 100, views: ["panel","venta","inventario","gastos","reportes","catalogos","usuarios"], seeAllSales: true, canSeeCost: true, canEditCatalog: true, canSeeProfit: true, canExpense: true, canStockIn: true, canUsers: true, canVoid: true },
+    admin:       { label: "Administradora", maxDisc: 15, views: ["panel","venta","inventario","gastos","reportes","catalogos"], seeAllSales: true, canSeeCost: false, canEditCatalog: true, canSeeProfit: false, canExpense: true, canStockIn: true, canUsers: false, canVoid: true },
+    vendedor:    { label: "Vendedor", maxDisc: 10, views: ["panel","venta","inventario"], seeAllSales: false, canSeeCost: false, canEditCatalog: false, canSeeProfit: false, canExpense: false, canStockIn: false, canUsers: false, canVoid: false }
   },
   categories: ["Blusas","Pantalones","Vestidos","Faldas","Sandalias","Tacones","Tenis","Bolsos","Carteras","Accesorios"],
   brands: ["Ari's","Flor","Denim Co","Sol","Vela","Luna","Bella"],
