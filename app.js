@@ -224,7 +224,7 @@ function panelView() {
   const exp = scopedExp(DB.expenses.filter(e => e.day === t)).reduce((a, e) => a + e.amount, 0);
   const delta = lastWeek ? Math.round((total - lastWeek) / lastWeek * 100) : 0;
   const mine = me.role === "vendedor";
-  const list = (mine ? s.filter(x => x.seller === me.id) : s).slice().reverse().slice(0, 8);
+  const list = (mine ? s.filter(x => x.seller === me.id) : s).slice().sort((a, b) => b.at.localeCompare(a.at) || b.n - a.n);
   const bySeller = DB.users.map(u => ({ u, t: s.filter(x => x.seller === u.id).reduce((a, x) => a + x.total, 0) })).filter(x => x.t > 0).sort((a, b) => b.t - a.t);
   const max = Math.max(1, ...bySeller.map(x => x.t));
   const hours = Array.from({ length: 12 }, (_, i) => s.filter(x => new Date(x.at).getHours() === 9 + i).reduce((a, x) => a + x.total, 0));
@@ -245,8 +245,8 @@ function panelView() {
     </section>
     <div class="grid-2">
       <section class="card">
-        <div class="card-h"><h2>${mine ? "Mis ventas de hoy" : "Ventas en vivo"} <span class="live">EN VIVO</span></h2><a href="#reportes" class="btn sm ${role().views.includes("reportes") ? "" : "hide-m hide-d"}">Reportes</a></div>
-        <div class="tbl-wrap"><table><thead><tr><th>Hora</th><th>Ticket</th><th>Vendedora</th><th>Artículos</th><th>Descuento</th><th class="r">Total</th></tr></thead><tbody>
+        <div class="card-h"><h2>${mine ? "Mis ventas de hoy" : "Ventas en vivo"} <span class="live">EN VIVO</span></h2><span class="hint live-count">${list.length} ${list.length === 1 ? "venta" : "ventas"} · ${money(list.reduce((a, x) => a + x.total, 0))}</span><a href="#reportes" class="btn sm ${role().views.includes("reportes") ? "" : "hide-m hide-d"}">Reportes</a></div>
+        <div class="tbl-wrap live-list"><table><thead><tr><th>Hora</th><th>Ticket</th><th>Vendedora</th><th>Artículos</th><th>Descuento</th><th class="r">Total</th></tr></thead><tbody>
         ${list.length ? list.map((x, i) => `<tr class="${i === 0 ? "hl" : ""}"><td><b>${fmtT(x.at)}</b></td><td style="color:var(--muted)">#${x.n}</td><td><span class="who"><span class="avatar ${x.seller === "u1" ? "red" : x.seller === "u3" ? "grey" : ""}">${esc(userById(x.seller).name[0])}</span>${esc(userById(x.seller).name)}</span></td><td>${esc(x.items.map(i => `${i.qty > 1 ? i.qty + " × " : ""}${i.name} ${i.size}`).join(", "))}</td><td>${discChip(x.discount)}</td><td class="r"><b>${money(x.total)}</b></td></tr>`).join("") : `<tr><td colspan="6" class="empty">Todavía no hay ventas hoy. ¡Registrá la primera!</td></tr>`}
         </tbody></table></div>
       </section>

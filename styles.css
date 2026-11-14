@@ -397,3 +397,8 @@ body.lock{overflow:hidden}
 .cs-foot .disc-opts button{height:36px}
 @media (max-width:370px){.cs-foot .pay button svg{display:none}.cs-foot{gap:8px}}
 .cart-item .i b,.cart-item .i span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* Ventas en vivo: todas las de hoy, con scroll propio y encabezado fijo */
+.live-list{max-height:460px;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+.live-list thead th{position:sticky;top:0;z-index:1}
+@media (max-width:900px){.live-list{max-height:60vh}.card-h .live-count{display:none}}
