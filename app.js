@@ -23,7 +23,7 @@ function load() {
 // Asegura campos nuevos en datos guardados (socios, códigos de barra, ajustes)
 function migrate() {
   DB.partners = DB.partners || JSON.parse(JSON.stringify(window.SEED.partners));
-  DB.settings = Object.assign({ waCountry: "505", relay: DEFAULT_RELAY }, DB.settings);
+  DB.settings = Object.assign({ waCountry: "505", relay: DEFAULT_RELAY, paper: "80", rcLogo: true, rcAddress: "", rcPhone: "", rcRuc: "", rcFooter: "¡Gracias por tu compra!\nCambios dentro de 8 días con este recibo." }, DB.settings);
   DB.products.forEach(p => { if (!p.partner) p.partner = DB.partners[0].id; });
   const def = { propietaria: { seeAllSales: true, canSeeCost: true, canSeeProfit: true }, admin: { seeAllSales: true, canSeeCost: false, canSeeProfit: false }, vendedor: { seeAllSales: false, canSeeCost: false, canSeeProfit: false } };
   Object.entries(DB.roles).forEach(([k, r]) => { const d = def[k] || def.vendedor; ["seeAllSales", "canSeeCost"].forEach(f => { if (r[f] === undefined) r[f] = d[f]; }); });
@@ -442,13 +442,43 @@ function ticketText(s) {
   L.push(`TOTAL ${money(s.total)}`.padStart(32), `Pago: ${s.pay}`, "", "¡Gracias por tu compra!", "Encontrá tu estilo único");
   return L.join("\n");
 }
+// Recibo para impresora térmica de rollo (80 mm o 58 mm)
+function receiptHTML(s) {
+  const st = DB.settings, w58 = st.paper === "58";
+  const d = new Date(s.at);
+  const units = s.items.reduce((a, i) => a + i.qty, 0);
+  const line = (l, r, cls = "") => `<div class="rc-row ${cls}"><span>${l}</span><span>${r}</span></div>`;
+  return `<div class="receipt ${w58 ? "w58" : "w80"}">
+    ${st.rcLogo ? `<img class="rc-logo" src="icons/logo-receipt.png" alt="">` : ""}
+    ${st.rcLogo ? "" : `<div class="rc-store">${esc(st.store)}</div>`}
+    ${st.rcAddress ? `<div class="rc-c">${esc(st.rcAddress)}</div>` : ""}
+    ${st.rcPhone ? `<div class="rc-c">Tel. ${esc(st.rcPhone)}</div>` : ""}
+    ${st.rcRuc ? `<div class="rc-c">RUC ${esc(st.rcRuc)}</div>` : ""}
+    <div class="rc-sep"></div>
+    ${line(`<b>Ticket #${s.n}</b>`, d.toLocaleDateString("es", { day: "2-digit", month: "2-digit", year: "numeric" }))}
+    ${line(`Atendió: ${esc(userById(s.seller).name)}`, d.toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" }))}
+    <div class="rc-sep"></div>
+    ${s.items.map(i => `<div class="rc-item"><div class="rc-name">${esc(i.name)}</div>
+      ${line(`<span class="rc-var">${esc(i.size)} · ${esc(i.color)}</span> ${i.qty} x ${money(i.price)}`, money(i.price * i.qty))}</div>`).join("")}
+    <div class="rc-sep"></div>
+    ${line(`Artículos: ${units}`, "")}
+    ${line("Subtotal", money(s.subtotal))}
+    ${s.discount ? line(`Descuento ${s.discount.pct} %${s.discount.type === "codigo" ? " (" + esc(s.discount.code) + ")" : ""}`, "− " + money(s.discount.amount)) : ""}
+    ${line("TOTAL", money(s.total), "rc-total")}
+    ${line("Forma de pago", esc(s.pay))}
+    <div class="rc-sep"></div>
+    <div class="rc-foot">${esc(st.rcFooter || "").replace(/\n/g, "<br>")}</div>
+    ${st.rcLogo ? "" : `<div class="rc-tag">Encontrá tu estilo único</div>`}
+  </div>`;
+}
+function setPage(css) { let el = document.getElementById("page-style"); if (!el) { el = document.createElement("style"); el.id = "page-style"; document.head.appendChild(el); } el.textContent = css; }
 function showTicket(s) {
   const txt = ticketText(s);
   const split = DB.partners.map(p => ({ p, x: scopeSale(s, p.id) })).filter(o => o.x);
   modal(`<div class="modal-h"><h3>Venta registrada</h3><button class="btn icon ghost" data-close>${I.x}</button></div>
     <div style="display:flex;gap:12px;align-items:center"><span class="avatar" style="width:40px;height:40px;background:var(--green)">✓</span><div><b style="font-size:18px">${money(s.total)}</b><div class="hint">Ticket #${s.n} · ${esc(s.pay)}${s.discount ? " · descuento " + s.discount.pct + " %" : ""}</div></div></div>
     ${split.length > 1 ? `<div class="split">${split.map(o => `<span class="who">${pDot(o.p.id)}${esc(o.p.name)} <b>${money(o.x.total)}</b></span>`).join("")}</div>` : ""}
-    <div class="ticket">${esc(txt)}</div>
+    <div class="rc-preview">${receiptHTML(s)}</div>
     <div class="field"><label for="waPhone">WhatsApp de la clienta (opcional)</label><div class="phone-in"><span>+${esc(DB.settings.waCountry)}</span><input id="waPhone" type="tel" inputmode="numeric" autocomplete="tel" placeholder="8888 8888" value="${esc(s.phone || "")}"></div></div>
     <div class="ticket-actions">
       <button class="btn red" data-act="wa" data-sale="${s.id}">${I.wa} Enviar por WhatsApp</button>
@@ -471,8 +501,17 @@ async function shareTicket(id) {
 }
 function printTicket(id) {
   const s = DB.sales.find(x => x.id === id); if (!s) return;
-  $("#print-root").innerHTML = `<pre class="print-ticket">${esc(ticketText(s))}</pre>`;
-  window.print();
+  const w = DB.settings.paper === "58" ? 58 : 80;
+  $("#print-root").innerHTML = receiptHTML(s);
+  const go = () => {
+    // Mide el recibo para que la página tenga su largo exacto (la impresora corta al final)
+    const probe = document.createElement("div"); probe.className = "rc-probe"; probe.innerHTML = receiptHTML(s); document.body.appendChild(probe);
+    const mm = Math.ceil(probe.firstElementChild.getBoundingClientRect().height * 25.4 / 96) + 4; probe.remove();
+    setPage(`@page{size:${w}mm ${Math.max(60, mm)}mm;margin:0}`);
+    window.print();
+  };
+  const img = new Image(); img.onload = img.onerror = go; img.src = "icons/logo-receipt.png";
+  if (!DB.settings.rcLogo) go();
 }
 
 /* ---------- Inventario ---------- */
@@ -727,6 +766,13 @@ function catView() {
       <div class="field"><label>Margen mínimo sobre costo (%)</label><input name="minMargin" type="number" min="0" value="${DB.settings.minMargin}"></div>
       <div class="field"><label>Código de país para WhatsApp</label><input name="waCountry" inputmode="numeric" value="${esc(DB.settings.waCountry)}"></div>
       <div class="field"><label>Servidor del escáner celular</label><input name="relay" value="${esc(DB.settings.relay)}"></div>
+      <div class="full section-title" style="padding-top:6px">Recibo impreso</div>
+      <div class="field"><label>Ancho del rollo</label><select name="paper"><option value="80" ${DB.settings.paper !== "58" ? "selected" : ""}>80 mm (estándar)</option><option value="58" ${DB.settings.paper === "58" ? "selected" : ""}>58 mm (pequeña)</option></select></div>
+      <div class="field"><label>Logo en el recibo</label><select name="rcLogo"><option value="1" ${DB.settings.rcLogo ? "selected" : ""}>Sí</option><option value="0" ${!DB.settings.rcLogo ? "selected" : ""}>No</option></select></div>
+      <div class="field full"><label>Dirección</label><input name="rcAddress" value="${esc(DB.settings.rcAddress)}" placeholder="Ej. Del parque central 1c al sur, Managua"></div>
+      <div class="field"><label>Teléfono</label><input name="rcPhone" value="${esc(DB.settings.rcPhone)}" inputmode="tel"></div>
+      <div class="field"><label>RUC (opcional)</label><input name="rcRuc" value="${esc(DB.settings.rcRuc)}"></div>
+      <div class="field full"><label>Mensaje al pie</label><textarea name="rcFooter" rows="2">${esc(DB.settings.rcFooter)}</textarea></div>
       <div class="full"><button class="btn dark" type="submit" ${can("canEditCatalog") ? "" : "disabled"}>Guardar ajustes</button></div></form></section>
     <section class="card"><div class="card-h"><h2>Socios</h2>${can("canEditCatalog") ? `<button class="btn sm" data-act="newpartner">${I.plus} Agregar</button>` : ""}</div><div class="card-b list" style="padding-top:4px;padding-bottom:4px">
       ${DB.partners.map(p => { const np = DB.products.filter(x => x.partner === p.id).length; return `<div class="row"><span class="who">${pDot(p.id)}<span><span class="t">${esc(p.name)}</span><span class="s">${np} productos · asume ${p.share} % de gastos compartidos</span></span></span>${can("canEditCatalog") ? `<button class="btn ghost sm" data-editpartner="${p.id}">Editar</button>` : ""}</div>`; }).join("")}
@@ -875,7 +921,7 @@ function bind() {
   const posQ = $("#posQ"); if (posQ) posQ.oninput = (e) => { S.q = e.target.value; const pos = e.target.selectionStart; render(); const n = $("#posQ"); n.focus(); n.setSelectionRange(pos, pos); };
   const invQ = $("#invQ"); if (invQ) invQ.oninput = (e) => { S.invQ = e.target.value; const pos = e.target.selectionStart; render(); const n = $("#invQ"); n.focus(); n.setSelectionRange(pos, pos); };
   const sim = $("#simToggle"); if (sim) sim.onchange = (e) => { S.sim = e.target.checked; toast(S.sim ? "Simulando ventas de otros dispositivos…" : "Simulación detenida"); };
-  const sf = $("#settingsForm"); if (sf) sf.onsubmit = (e) => { e.preventDefault(); const f = new FormData(sf); Object.assign(DB.settings, { store: f.get("store"), currency: f.get("currency"), lowStock: +f.get("lowStock"), minMargin: +f.get("minMargin"), waCountry: f.get("waCountry").replace(/\D/g, ""), relay: f.get("relay").trim() || DEFAULT_RELAY }); stopScanner(); listenScanner(); save(); render(); toast("Ajustes guardados"); };
+  const sf = $("#settingsForm"); if (sf) sf.onsubmit = (e) => { e.preventDefault(); const f = new FormData(sf); Object.assign(DB.settings, { paper: f.get("paper"), rcLogo: f.get("rcLogo") === "1", rcAddress: f.get("rcAddress").trim(), rcPhone: f.get("rcPhone").trim(), rcRuc: f.get("rcRuc").trim(), rcFooter: f.get("rcFooter").trim() }); Object.assign(DB.settings, { store: f.get("store"), currency: f.get("currency"), lowStock: +f.get("lowStock"), minMargin: +f.get("minMargin"), waCountry: f.get("waCountry").replace(/\D/g, ""), relay: f.get("relay").trim() || DEFAULT_RELAY }); stopScanner(); listenScanner(); save(); render(); toast("Ajustes guardados"); };
   app.querySelectorAll("[data-perm]").forEach(i => i.onchange = (e) => { const [k, key] = e.target.dataset.perm.split("|"); setPerm(k, key, e.target.checked); });
   app.querySelectorAll("[data-role]").forEach(s => s.onchange = (e) => { userById(e.target.dataset.role).role = e.target.value; save(); render(); toast("Rol actualizado"); });
 }
@@ -1113,6 +1159,7 @@ async function printLabels(partner, pid, mode) {
   const svgCache = {};
   const bc = (code) => svgCache[code] || (svgCache[code] = (() => { const el = document.createElementNS("http://www.w3.org/2000/svg", "svg"); JsBarcode(el, code, { format: "CODE128", height: 34, width: 1.6, fontSize: 11, margin: 0, textMargin: 1 }); return el.outerHTML; })());
   $("#print-root").innerHTML = `<div class="labels">${list.map(({ p, v }) => `<div class="label"><div class="lb-top"><span>${esc(DB.settings.store)}</span><b>${money(p.price)}</b></div><div class="lb-name">${esc(p.name)}</div><div class="lb-var">${esc(v.size)} · ${esc(v.color)}</div>${bc(v.code)}</div>`).join("")}</div>`;
+  setPage("@page{size:letter;margin:8mm}");
   setTimeout(() => window.print(), 50);
 }
 
