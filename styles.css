@@ -471,3 +471,7 @@ body.lock{overflow:hidden}
 @media print{#print-root .receipt{padding-left:0;padding-right:0}}
 .rc-probe{position:absolute;left:-9999px;top:0;visibility:hidden}
 @media print{html,body{background:#fff!important}}
+
+.chart-x{display:flex;gap:4px;margin-top:6px}
+.chart-x span{flex:1;min-width:0;text-align:center;font-size:10.5px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:visible}
+.card-h .hint{white-space:nowrap}

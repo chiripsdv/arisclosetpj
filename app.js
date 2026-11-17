@@ -279,11 +279,17 @@ function panelView() {
         ${!mine ? `<section class="card"><div class="card-h"><h2>Por vendedora</h2></div><div class="card-b" style="display:flex;flex-direction:column;gap:14px">
           ${bySeller.map(x => `<div style="display:flex;flex-direction:column;gap:6px"><div class="row" style="padding:0;border:none"><span>${esc(x.u.name)}</span><b>${money(x.t)}</b></div><div class="bar"><i class="${x.u.role === "propietaria" ? "red" : ""}" style="width:${x.t / max * 100}%"></i></div></div>`).join("") || `<div class="empty">Sin ventas todavía</div>`}
         </div></section>
-        <section class="card"><div class="card-h"><h2>Ventas por hora</h2><span class="hint">9 h – 20 h</span></div><div class="card-b"><div class="mini-chart">${hours.map((h, i) => `<i class="${h === hmax && h > 0 ? "red" : ""}" style="height:${h / hmax * 100}%" title="${9 + i}:00 · ${money(h)}"></i>`).join("")}</div></div></section>` : ""}
+        <section class="card"><div class="card-h"><h2>Ventas por hora</h2><span class="hint">${peakHint(hours)}</span></div><div class="card-b"><div class="mini-chart">${hours.map((h, i) => `<i class="${h === hmax && h > 0 ? "red" : ""}" style="height:${h / hmax * 100}%" title="${9 + i}:00 · ${money(h)}"></i>`).join("")}</div>${chartX(HOURS)}</div></section>` : ""}
       </div>
     </div>
   </div>`;
 }
+// Etiquetas bajo un gráfico de barras (horas o días)
+const chartX = (labels, every = 1) => `<div class="chart-x">${labels.map((l, i) => `<span>${i % every === 0 || i === labels.length - 1 ? l : ""}</span>`).join("")}</div>`;
+const HOURS = Array.from({ length: 12 }, (_, i) => 9 + i);
+const peakHint = (hours) => { const m = Math.max(...hours); return m > 0 ? `Pico ${HOURS[hours.indexOf(m)]} h · ${money(m)}` : "9 h – 20 h"; };
+const dayShort = (d) => new Date(d + "T12:00").toLocaleDateString("es", { weekday: "short" }).replace(".", "");
+const dayNum = (d) => String(+d.slice(8));
 const discChip = (d) => d ? `<span class="chip red">${d.type === "codigo" ? "Código " + esc(d.code) : d.type === "pin" ? d.pct + " % con PIN" : d.pct + " % manual"}</span>` : `<span style="color:var(--faint)">—</span>`;
 
 // Panel de quien solo ve lo suyo: lo vendido, unidades y stock. Sin costos, márgenes ni caja de la tienda.
@@ -316,7 +322,7 @@ function myPanelView() {
           </tbody></table></div></section>
       </div>
       <div class="stack">
-        <section class="card"><div class="card-h"><h2>Mis unidades · 7 días</h2></div><div class="card-b"><div class="mini-chart" style="height:90px">${perDay.map((v, i) => `<i class="${i === perDay.length - 1 ? "red" : ""}" style="height:${v / pmax * 100}%" title="${week[i]} · ${v} uds."></i>`).join("")}</div><div class="row" style="border:none;padding:6px 0 0"><span class="hint">${fmtD(week[0])}</span><span class="hint">hoy</span></div></div></section>
+        <section class="card"><div class="card-h"><h2>Mis unidades · 7 días</h2></div><div class="card-b"><div class="mini-chart" style="height:90px">${perDay.map((v, i) => `<i class="${i === perDay.length - 1 ? "red" : ""}" style="height:${v / pmax * 100}%" title="${week[i]} · ${v} uds."></i>`).join("")}</div>${chartX(week.map((d, i) => i === week.length - 1 ? "hoy" : dayShort(d)))}</div></section>
         <section class="card"><div class="card-h"><h2>${I.warn} Stock bajo</h2><span class="badge">${lowStock().length}</span></div>
           <div class="card-b list" style="padding-top:4px;padding-bottom:4px">${lowStock().slice(0, 8).map(({ p, v }) => `<div class="row"><span><span class="t">${esc(p.name)}</span><span class="s">${esc(v.size)} · ${esc(v.color)}</span></span><span class="chip ${v.stock === 0 ? "solid-red" : v.stock <= 1 ? "red" : ""}">${v.stock}</span></div>`).join("") || `<div class="empty">Todo con stock suficiente</div>`}</div>
           <div style="padding:0 18px 18px"><a href="#inventario" class="btn outline block">Ver todo el inventario</a></div></section>
@@ -687,10 +693,10 @@ function repView() {
       <div class="row"><span>Venta bruta</span><b>${money(gross)}</b></div><div class="row"><span>− Descuentos</span><b style="color:var(--red)">− ${money(disc)}</b></div><div class="row"><span>= Venta neta</span><b>${money(total)}</b></div>
       <div class="row"><span>− Costo de mercadería vendida</span><b>− ${money(cost)}</b></div><div class="row"><span>= Utilidad bruta</span><b>${money(total - cost)}</b></div>
       <div class="row"><span>− Gastos operativos (${e.length})</span><b>− ${money(exp)}</b></div><div class="row" style="border-top:2px solid var(--ink)"><span style="font-weight:700">= Utilidad neta</span><b style="color:${total - cost - exp >= 0 ? "var(--green)" : "var(--red)"};font-size:16px">${money(total - cost - exp)}</b></div></div></section>` : ""}
-    <section class="card"><div class="card-h"><h2>Ventas por día</h2></div><div class="card-b"><div class="mini-chart" style="height:120px">${perDay.map((v, i) => `<i class="${i === perDay.length - 1 ? "red" : ""}" style="height:${v / pmax * 100}%" title="${days[i]} · ${money(v)}"></i>`).join("")}</div><div class="row" style="border:none;padding:6px 0 0"><span class="hint">${fmtD(days[0])}</span><span class="hint">${fmtD(days[days.length - 1])}</span></div></div></section>
+    <section class="card"><div class="card-h"><h2>Ventas por día</h2></div><div class="card-b"><div class="mini-chart" style="height:120px">${perDay.map((v, i) => `<i class="${i === perDay.length - 1 ? "red" : ""}" style="height:${v / pmax * 100}%" title="${days[i]} · ${money(v)}"></i>`).join("")}</div>${chartX(days.map(d => days.length <= 7 ? dayShort(d) + " " + dayNum(d) : dayNum(d)), days.length > 14 ? 3 : 1)}</div></section>
     <div class="grid-2" style="grid-template-columns:repeat(auto-fit,minmax(300px,1fr))">
       <section class="card"><div class="card-h"><h2>Más vendidos</h2></div>${tbl(`<th>Producto</th><th class="r">Uds.</th><th class="r">Neto</th>`, topL.map(g => `<tr><td><b>${esc(g.k)}</b></td><td class="r">${g.q}</td><td class="r">${money(g.net)}</td></tr>`))}</section>
-      <section class="card"><div class="card-h"><h2>Ventas por hora</h2><span class="hint">9 h – 20 h</span></div><div class="card-b"><div class="mini-chart" style="height:100px">${hours.map((h, i) => `<i class="${h === hmax && h > 0 ? "red" : ""}" style="height:${h / hmax * 100}%" title="${9 + i}:00 · ${money(h)}"></i>`).join("")}</div></div></section>
+      <section class="card"><div class="card-h"><h2>Ventas por hora</h2><span class="hint">${peakHint(hours)}</span></div><div class="card-b"><div class="mini-chart" style="height:100px">${hours.map((h, i) => `<i class="${h === hmax && h > 0 ? "red" : ""}" style="height:${h / hmax * 100}%" title="${9 + i}:00 · ${money(h)}"></i>`).join("")}</div>${chartX(HOURS)}</div></section>
       <section class="card"><div class="card-h"><h2>Formas de pago</h2></div><div class="card-b" style="display:flex;flex-direction:column;gap:14px">${byPay.map(x => `<div style="display:flex;flex-direction:column;gap:6px"><div class="row" style="padding:0;border:none"><span>${esc(x.m)}</span><b>${money(x.t)} <span class="hint">${total ? (x.t / total * 100).toFixed(0) : 0} %</span></b></div><div class="bar"><i style="width:${total ? x.t / total * 100 : 0}%"></i></div></div>`).join("")}</div></section>
     </div>`;
   } else if (tab === "socios") {
