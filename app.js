@@ -85,7 +85,7 @@ function login(u) { me = u; sessionStorage.setItem(SESSION, u.id); location.hash
 function logout() { me = null; sessionStorage.removeItem(SESSION); stopScanner(); location.hash = ""; render(); }
 
 /* ---------- Estado UI ---------- */
-const S = { cart: [], disc: null, pay: "Efectivo", q: "", invFilter: "Todo", invQ: "", repRange: "hoy", sim: false, custom: false, partner: "all" };
+const S = { sb: (() => { try { return localStorage.getItem("aris-sb") === "1"; } catch { return false; } })(), cart: [], disc: null, pay: "Efectivo", q: "", invFilter: "Todo", invQ: "", repRange: "hoy", sim: false, custom: false, partner: "all" };
 const prodById = (id) => DB.products.find(p => p.id === id);
 const varById = (id) => { for (const p of DB.products) { const v = p.variants.find(v => v.id === id); if (v) return { p, v }; } return null; };
 const userById = (id) => DB.users.find(u => u.id === id) || { name: "—" };
@@ -136,6 +136,7 @@ const I = {
   out: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>',
   cam: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M7 8v8M10 8v8M13.5 8v8M17 8v8"/></svg>',
   back: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>',
+  chev: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>',
   edit: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>',
   phone: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M11 18h2"/></svg>',
   barcode: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M4 5v14M7 5v14M10.5 5v14M13 5v14M16.5 5v14M20 5v14"/></svg>',
@@ -159,14 +160,15 @@ function render() {
   const todayTotal = todaySales.reduce((a, s) => a + s.total, 0);
   const _ci = $(".cart-items-d"), _ciTop = _ci ? _ci.scrollTop : 0;
   app.innerHTML = `
-  <div class="shell ${v === "venta" && S.cart.length ? "has-cart" : ""}">
+  <div class="shell ${v === "venta" && S.cart.length ? "has-cart" : ""} ${S.sb ? "sb-collapsed" : ""}">
     <aside class="sidebar">
-      <div class="brand"><img src="icons/logo.png" alt=""><div><div class="brand-name">${esc(DB.settings.store)}</div><div class="brand-sub">${esc(role().label)}</div></div></div>
-      <nav class="nav">${NAV.filter(([k]) => role().views.includes(k)).map(([k, l]) => `<a href="#${k}" class="${v === k ? "active" : ""}">${I[k]}<span>${l}</span>${tabBadge(k, low)}</a>`).join("")}</nav>
+      <button class="sb-toggle" data-act="sb" aria-label="${S.sb ? "Expandir menú" : "Contraer menú"}" title="${S.sb ? "Expandir menú" : "Contraer menú"}">${I.chev}</button>
+      <div class="brand"><img class="brand-full" src="icons/logo-w.png" alt="${esc(DB.settings.store)}"><img class="brand-mono" src="icons/mono-w.png" alt=""><span class="brand-role">${esc(role().label)}</span></div>
+      <nav class="nav">${NAV.filter(([k]) => role().views.includes(k)).map(([k, l]) => `<a href="#${k}" class="${v === k ? "active" : ""}" data-tip="${l}">${I[k]}<span class="nl">${l}</span>${tabBadge(k, low)}</a>`).join("")}</nav>
       <div class="side-foot">
         ${installHTML()}
-        <div class="cashbox"><small>${can("seeAllSales") ? "Caja de hoy" : "Mis ventas de hoy"}</small><b>${money(todayTotal)}</b><small>${todaySales.length} tickets · ${todaySales.reduce((a, x) => a + x.items.reduce((b, i) => b + i.qty, 0), 0)} uds.</small></div>
-        <div class="me"><span class="avatar ${me.role === "propietaria" ? "red" : ""}">${esc(me.name.slice(0, 2).toUpperCase())}</span><div><b>${esc(me.name)}</b><span>${esc(role().label)}</span></div><button title="Salir" data-act="logout">${I.out}</button></div>
+        <div class="cashbox" data-tip="${money(todayTotal)}"><span class="cb-ico">${I.cash}</span><div class="cb-body"><small>${can("seeAllSales") ? "Caja de hoy" : "Mis ventas de hoy"}</small><b>${money(todayTotal)}</b><small>${todaySales.length} tickets · ${todaySales.reduce((a, x) => a + x.items.reduce((b, i) => b + i.qty, 0), 0)} uds.</small></div></div>
+        <div class="me"><span class="avatar ${me.role === "propietaria" ? "red" : ""}" title="${esc(me.name)}">${esc(me.name.slice(0, 2).toUpperCase())}</span><div><b>${esc(me.name)}</b><span>${esc(role().label)}</span></div><button title="Salir" data-act="logout">${I.out}</button></div>
       </div>
     </aside>
     <div class="main">
@@ -178,6 +180,7 @@ function render() {
     </div>
   </div>`;
   bind();
+  if (S.lastView !== v) { S.lastView = v; animateView(); }
   const ci = $(".cart-items-d");
   if (ci) {
     ci.scrollTop = _ciTop;
@@ -208,6 +211,7 @@ function cartBarHTML() {
     <button class="cb-pay" data-act="opencart">Cobrar <b>${money(total)}</b></button>
   </div>`;
 }
+const greet = () => { const h = new Date().getHours(); return h < 12 ? "Buenos días" : h < 19 ? "Buenas tardes" : "Buenas noches"; };
 const topbar = (title, sub, right = "") => `<header class="topbar"><div><h1>${title}</h1><div class="sub">${sub}</div></div><div class="grow"></div>${right}<button class="btn icon hide-d" data-act="logout" title="Salir">${I.out}</button></header>`;
 
 /* ---------- Login ---------- */
@@ -256,13 +260,13 @@ function panelView() {
   const hmax = Math.max(1, ...hours);
   const byPartner = DB.partners.map(p => { const ps = salesOf(t).map(x => scopeSale(x, p.id)).filter(Boolean); return { p, t: ps.reduce((a, x) => a + x.total, 0), q: ps.reduce((a, x) => a + x.items.reduce((b, i) => b + i.qty, 0), 0) }; });
   const pmax = Math.max(1, ...byPartner.map(x => x.t));
-  return topbar("Panel", S.partner === "all" ? fmtDL(new Date()) : `${esc(partnerById(S.partner).name)} · ${fmtDL(new Date())}`, `
+  return topbar(`${greet()}, ${esc(me.name)}`, S.partner === "all" ? fmtDL(new Date()) : `${esc(partnerById(S.partner).name)} · ${fmtDL(new Date())}`, `
     ${!mine ? `<label class="toggle hide-m" title="Genera una venta de otro dispositivo cada pocos segundos"><input type="checkbox" id="simToggle" ${S.sim ? "checked" : ""}> <span class="tl-long">Simular ventas de otros dispositivos</span><span class="tl-short">Simular</span></label>` : ""}
     <a href="#venta" class="btn red">${I.plus}<span class="hide-m">Nueva venta</span></a>`) + `
   <div class="content">
     ${partnerSeg()}
     <section class="kpis">
-      <div class="card kpi"><div class="lbl">Ventas de hoy<span class="ico">${I.trend}</span></div><div class="val">${money(total)}</div><div class="foot">${lastWeek ? `<span class="chip ${delta >= 0 ? "green" : "red"}">${delta >= 0 ? "+" : ""}${delta} %</span> vs. hace una semana` : "Sin referencia semanal"}</div></div>
+      <div class="card kpi hero"><div class="lbl">Ventas de hoy<span class="ico">${I.trend}</span></div><div class="val">${money(total)}</div><div class="foot">${lastWeek ? `<span class="chip ${delta >= 0 ? "green" : "red"}">${delta >= 0 ? "+" : ""}${delta} %</span> vs. hace una semana` : "Sin referencia semanal"}</div></div>
       <div class="card kpi"><div class="lbl">Tickets<span class="ico">${I.ticket}</span></div><div class="val">${s.length}</div><div class="foot">Promedio ${money(s.length ? total / s.length : 0)}</div></div>
       <div class="card kpi"><div class="lbl">Descuentos<span class="ico red">${I.disc}</span></div><div class="val red">${money(disc)}</div><div class="foot">${s.filter(x => x.discount).length} ventas · ${total ? (disc / (total + disc) * 100).toFixed(1) : 0} %</div></div>
       ${can("canSeeProfit") ? `<div class="card kpi"><div class="lbl">Utilidad estimada<span class="ico">${I.cash}</span></div><div class="val">${money(total - cost - exp)}</div><div class="foot">Gastos de hoy ${money(exp)}</div></div>`
@@ -271,7 +275,7 @@ function panelView() {
     <div class="grid-2">
       <section class="card">
         <div class="card-h"><h2>${mine ? "Mis ventas de hoy" : "Ventas en vivo"} <span class="live">EN VIVO</span></h2><span class="hint live-count">${list.length} ${list.length === 1 ? "venta" : "ventas"} · ${money(list.reduce((a, x) => a + x.total, 0))}</span><a href="#reportes" class="btn sm ${role().views.includes("reportes") ? "" : "hide-m hide-d"}">Reportes</a></div>
-        <div class="tbl-wrap live-list"><table><thead><tr><th>Hora</th><th>Vendedora</th><th>Artículos</th><th>Descuento</th><th class="r">Total</th></tr></thead><tbody>
+        <div class="tbl-wrap live-list lv-a"><table><thead><tr><th>Hora</th><th>Vendedora</th><th>Artículos</th><th>Descuento</th><th class="r">Total</th></tr></thead><tbody>
         ${list.length ? list.map((x, i) => `<tr class="${i === 0 ? "hl" : ""} clickable" data-sale-detail="${x.id}" title="Ver detalle"><td><b>${fmtT(x.at)}</b><span class="tk">#${x.n}</span></td><td><span class="who"><span class="avatar ${x.seller === "u1" ? "red" : x.seller === "u3" ? "grey" : ""}" title="${esc(userById(x.seller).name)}">${esc(userById(x.seller).name[0])}</span><span class="who-n">${esc(userById(x.seller).name)}</span></span></td><td>${itemsCell(x)}</td><td>${discChip(x.discount)}</td><td class="r"><b>${money(x.total)}</b></td></tr>`).join("") : `<tr><td colspan="6" class="empty">Todavía no hay ventas hoy. ¡Registrá la primera!</td></tr>`}
         </tbody></table></div>
       </section>
@@ -320,7 +324,7 @@ function saleDetailModal(id) {
     ${split.length > 1 ? `<div class="split">${split.map(o => `<span class="who">${pDot(o.p.id)}${esc(o.p.name)} <b>${money(o.v.total)}</b></span>`).join("")}</div>` : ""}
     <div class="ticket-actions"><button class="btn" data-act="print" data-sale="${x.id}">${I.print} Reimprimir</button><button class="btn red" data-act="reticket" data-sale="${x.id}">${I.wa} Enviar ticket</button></div>`);
 }
-const discChip = (d) => d ? `<span class="chip red">${d.type === "codigo" ? "Código " + esc(d.code) : d.type === "pin" ? d.pct + " % con PIN" : d.pct + " % manual"}</span>` : `<span style="color:var(--faint)">—</span>`;
+const discChip = (d) => d ? `<span class="chip red">${d.type === "codigo" ? "Código " + esc(d.code) : d.type === "pin" ? d.pct + " % con PIN" : d.pct + " % manual"}</span>` : `<span class="nodisc" style="color:var(--faint)">—</span>`;
 
 // Panel de quien solo ve lo suyo: lo vendido, unidades y stock. Sin costos, márgenes ni caja de la tienda.
 function myPanelView() {
@@ -332,10 +336,10 @@ function myPanelView() {
   const topL = Object.entries(top).sort((a, b) => b[1].q - a[1].q);
   const list = s.slice().sort((a, b) => b.at.localeCompare(a.at));
   const perDay = ws.map(x => x.reduce((a, y) => a + y.items.reduce((b, i) => b + i.qty, 0), 0)), pmax = Math.max(1, ...perDay);
-  return topbar("Mis ventas", fmtDL(new Date()), `<a href="#venta" class="btn red">${I.plus}<span class="hide-m">Nueva venta</span></a>`) + `
+  return topbar(`${greet()}, ${esc(me.name)}`, `Mis ventas · ${fmtDL(new Date())}`, `<a href="#venta" class="btn red">${I.plus}<span class="hide-m">Nueva venta</span></a>`) + `
   <div class="content">
     <section class="kpis">
-      <div class="card kpi"><div class="lbl">Vendido hoy<span class="ico">${I.trend}</span></div><div class="val">${money(total)}</div><div class="foot">${s.length} ${s.length === 1 ? "venta" : "ventas"}</div></div>
+      <div class="card kpi hero"><div class="lbl">Vendido hoy<span class="ico">${I.trend}</span></div><div class="val">${money(total)}</div><div class="foot">${s.length} ${s.length === 1 ? "venta" : "ventas"}</div></div>
       <div class="card kpi"><div class="lbl">Unidades hoy<span class="ico">${I.inventario}</span></div><div class="val">${units}</div><div class="foot">${s.length ? (units / s.length).toFixed(1) + " por venta" : "Todavía sin ventas"}</div></div>
       <div class="card kpi"><div class="lbl">Vendido en 7 días<span class="ico">${I.ticket}</span></div><div class="val">${money(wTotal)}</div><div class="foot">${wUnits} unidades</div></div>
       <div class="card kpi"><div class="lbl">Stock bajo<span class="ico red">${I.warn}</span></div><div class="val red">${lowStock().length}</div><div class="foot">variantes por agotarse</div></div>
@@ -343,7 +347,7 @@ function myPanelView() {
     <div class="grid-2">
       <div class="stack">
         <section class="card"><div class="card-h"><h2>Mis ventas de hoy</h2><span class="hint">${s.length} · ${money(total)}</span></div>
-          <div class="tbl-wrap live-list"><table><thead><tr><th>Hora</th><th>Ticket</th><th>Artículos</th><th class="r">Uds.</th><th>Pago</th><th class="r">Total</th></tr></thead><tbody>
+          <div class="tbl-wrap live-list lv-b"><table><thead><tr><th>Hora</th><th>Ticket</th><th>Artículos</th><th class="r">Uds.</th><th>Pago</th><th class="r">Total</th></tr></thead><tbody>
           ${list.length ? list.map((x, i) => `<tr class="${i === 0 ? "hl" : ""} clickable" data-sale-detail="${x.id}" title="Ver detalle"><td><b>${fmtT(x.at)}</b></td><td style="color:var(--muted)">#${x.n}</td><td>${itemsCell(x)}</td><td class="r">${x.items.reduce((a, i) => a + i.qty, 0)}</td><td><span class="chip">${esc(x.pay)}</span></td><td class="r"><b>${money(x.total)}</b></td></tr>`).join("") : `<tr><td colspan="6" class="empty">Todavía no vendiste hoy. ¡A vender!</td></tr>`}
           </tbody></table></div></section>
         <section class="card"><div class="card-h"><h2>Lo que vendí hoy</h2><span class="hint">por producto</span></div>
@@ -984,6 +988,7 @@ document.addEventListener("click", (e) => {
   if (t.dataset.toggle) { const u = userById(t.dataset.toggle); u.active = !u.active; save(); return render(); }
   const a = t.dataset.act;
   if (a === "opencart") { S.cartOpen = true; render(); }
+  else if (a === "sb") { S.sb = !S.sb; try { localStorage.setItem("aris-sb", S.sb ? "1" : "0"); } catch {} render(); }
   else if (a === "logout") logout();
   else if (a === "clearcart") { S.cart = []; S.disc = null; render(); }
   else if (a === "nodisc") { e.preventDefault(); S.disc = null; render(); }
@@ -1022,6 +1027,22 @@ setInterval(() => {
   v.stock--; DB.sales.push({ id: uid(), n: DB.sales.reduce((a, s) => Math.max(a, s.n), 400) + 1, at: new Date().toISOString(), day: today(), seller: u.id, items: [{ pid: p.id, vid: v.id, partner: p.partner, name: p.name, size: v.size, color: v.color, qty: 1, price: p.price, cost: p.cost }], subtotal: sub, discount: d, total: sub - (d ? d.amount : 0), pay: DB.payMethods[Math.floor(Math.random() * 3)], status: "cerrada" });
   save(); if (view() === "panel") { render(); toast(`${u.name} vendió ${p.name} ${v.size} · ${money(sub - (d ? d.amount : 0))}`); }
 }, 9000);
+
+/* ---------- Animaciones: entrada escalonada y números que suben ---------- */
+const reduceMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+function animateView() {
+  if (reduceMotion()) return;
+  const c = $(".content"); if (!c) return;
+  c.classList.remove("enter"); void c.offsetWidth; c.classList.add("enter");
+  document.querySelectorAll(".kpi .val").forEach(el => {
+    const txt = el.textContent, m = txt.match(/^(.*?)([\d,]+(?:\.\d+)?)(.*)$/); if (!m) return;
+    const target = parseFloat(m[2].replace(/,/g, "")); if (!(target > 0)) return;
+    const dec = (m[2].split(".")[1] || "").length, t0 = performance.now(), dur = 750;
+    const fmt = (n) => m[1] + n.toLocaleString("en-US", { minimumFractionDigits: dec, maximumFractionDigits: dec }) + m[3];
+    const step = (t) => { const k = Math.min(1, (t - t0) / dur), e = 1 - Math.pow(1 - k, 3); if (!el.isConnected) return; el.textContent = fmt(target * e); if (k < 1) requestAnimationFrame(step); else el.textContent = txt; };
+    el.textContent = fmt(0); requestAnimationFrame(step);
+  });
+}
 
 /* ---------- Librerías bajo demanda ---------- */
 const _libs = {};
