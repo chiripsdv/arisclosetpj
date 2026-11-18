@@ -508,3 +508,13 @@ td .tk{display:block;font-size:11px;color:var(--muted);font-weight:500}
 @media (max-width:1250px){.live-list .who-n{display:none}.live-list th,.live-list td{padding-left:12px;padding-right:12px}.it-one{max-width:170px}}
 @media (min-width:901px) and (max-width:1300px){.grid-2{grid-template-columns:minmax(0,1fr) 280px}}
 @media (min-width:901px) and (max-width:1180px){.grid-2{grid-template-columns:minmax(0,1fr)}.grid-2>.stack{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));align-items:start}}
+
+/* Sombras suaves en paneles y tarjetas */
+:root{--shadow:0 1px 3px rgba(60,40,40,.06),0 8px 24px rgba(60,40,40,.08);--shadow-hover:0 2px 4px rgba(60,40,40,.06),0 12px 28px rgba(60,40,40,.10)}
+.card,.prod,.cartbar{box-shadow:var(--shadow)}
+.card{border-color:#ECEBE8}
+.prod{transition:box-shadow .15s ease,transform .15s ease}
+.prod:hover{box-shadow:var(--shadow-hover);transform:translateY(-1px)}
+.kpi{transition:box-shadow .15s ease}
+.kpi:hover{box-shadow:var(--shadow-hover)}
+.cs-items .cart-item,.sd-items .cart-item{box-shadow:none}
