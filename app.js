@@ -246,6 +246,7 @@ function bindLogin() {
 function panelView() {
   if (!can("seeAllSales")) return myPanelView();
   const t = today(), s = scoped(salesOf(t));
+  const W = last7().map(d => { const ds = scoped(salesOf(d)); return { total: ds.reduce((a, x) => a + x.total, 0), n: ds.length, disc: ds.reduce((a, x) => a + (x.discount ? x.discount.amount : 0), 0), cost: ds.reduce((a, x) => a + x.items.reduce((b, i) => b + i.cost * i.qty, 0), 0), units: ds.reduce((a, x) => a + x.items.reduce((b, i) => b + i.qty, 0), 0), exp: scopedExp(DB.expenses.filter(e => e.day === d)).reduce((a, e) => a + e.amount, 0) }; });
   const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 7);
   const lastWeek = scoped(salesOf(dayOf(yesterday))).reduce((a, x) => a + x.total, 0);
   const total = s.reduce((a, x) => a + x.total, 0), disc = s.reduce((a, x) => a + (x.discount ? x.discount.amount : 0), 0);
@@ -266,11 +267,11 @@ function panelView() {
   <div class="content">
     ${partnerSeg()}
     <section class="kpis">
-      <div class="card kpi hero"><div class="lbl">Ventas de hoy<span class="ico">${I.trend}</span></div><div class="val">${money(total)}</div><div class="foot">${lastWeek ? `<span class="chip ${delta >= 0 ? "green" : "red"}">${delta >= 0 ? "+" : ""}${delta} %</span> vs. hace una semana` : "Sin referencia semanal"}</div></div>
-      <div class="card kpi"><div class="lbl">Tickets<span class="ico">${I.ticket}</span></div><div class="val">${s.length}</div><div class="foot">Promedio ${money(s.length ? total / s.length : 0)}</div></div>
-      <div class="card kpi"><div class="lbl">Descuentos<span class="ico red">${I.disc}</span></div><div class="val red">${money(disc)}</div><div class="foot">${s.filter(x => x.discount).length} ventas · ${total ? (disc / (total + disc) * 100).toFixed(1) : 0} %</div></div>
-      ${can("canSeeProfit") ? `<div class="card kpi"><div class="lbl">Utilidad estimada<span class="ico">${I.cash}</span></div><div class="val">${money(total - cost - exp)}</div><div class="foot">Gastos de hoy ${money(exp)}</div></div>`
-        : `<div class="card kpi"><div class="lbl">Artículos vendidos<span class="ico">${I.inventario}</span></div><div class="val">${s.reduce((a, x) => a + x.items.reduce((b, i) => b + i.qty, 0), 0)}</div><div class="foot">${lowStockP().length} variantes en stock bajo</div></div>`}
+      <div class="card kpi hero k1"><div class="lbl">Ventas de hoy<span class="ico">${I.trend}</span></div><div class="val">${money(total)}</div><div class="foot">${lastWeek ? `${deltaChip(total, lastWeek)} vs. hace una semana` : "Sin referencia semanal"}</div>${spark(W.map(d => d.total))}</div>
+      <div class="card kpi k2"><div class="lbl">Tickets<span class="ico">${I.ticket}</span></div><div class="val">${s.length}</div><div class="foot">${deltaChip(s.length, W[0].n)} Promedio ${money(s.length ? total / s.length : 0)}</div>${spark(W.map(d => d.n))}</div>
+      <div class="card kpi k3"><div class="lbl">Descuentos<span class="ico">${I.disc}</span></div><div class="val red">${money(disc)}</div><div class="foot">${s.filter(x => x.discount).length} ventas · ${total ? (disc / (total + disc) * 100).toFixed(1) : 0} %</div>${spark(W.map(d => d.disc))}</div>
+      ${can("canSeeProfit") ? `<div class="card kpi k4"><div class="lbl">Utilidad estimada<span class="ico">${I.cash}</span></div><div class="val">${money(total - cost - exp)}</div><div class="foot">Margen ${total ? Math.round((total - cost) / total * 100) : 0} % · gastos ${money(exp)}</div>${spark(W.map(d => d.total - d.cost - d.exp))}</div>`
+        : `<div class="card kpi k4"><div class="lbl">Artículos vendidos<span class="ico">${I.inventario}</span></div><div class="val">${s.reduce((a, x) => a + x.items.reduce((b, i) => b + i.qty, 0), 0)}</div><div class="foot">${lowStockP().length} variantes en stock bajo</div>${spark(W.map(d => d.units))}</div>`}
     </section>
     <div class="grid-2">
       <section class="card">
@@ -324,6 +325,19 @@ function saleDetailModal(id) {
     ${split.length > 1 ? `<div class="split">${split.map(o => `<span class="who">${pDot(o.p.id)}${esc(o.p.name)} <b>${money(o.v.total)}</b></span>`).join("")}</div>` : ""}
     <div class="ticket-actions"><button class="btn" data-act="print" data-sale="${x.id}">${I.print} Reimprimir</button><button class="btn red" data-act="reticket" data-sale="${x.id}">${I.wa} Enviar ticket</button></div>`);
 }
+// Mini-gráfica de tendencia (últimos 7 días) para las tarjetas
+let _sparkN = 0;
+function spark(vals) {
+  const n = vals.length; if (n < 2) return "";
+  const max = Math.max(...vals), min = Math.min(...vals, 0), rng = max - min || 1;
+  const pts = vals.map((v, i) => [i * 100 / (n - 1), 30 - (v - min) / rng * 25]);
+  let d = `M${pts[0][0]},${pts[0][1]}`;
+  for (let i = 1; i < n; i++) { const [x0, y0] = pts[i - 1], [x1, y1] = pts[i], cx = (x0 + x1) / 2; d += ` C${cx},${y0} ${cx},${y1} ${x1},${y1}`; }
+  const id = "sg" + (++_sparkN);
+  return `<svg class="spark" viewBox="0 0 100 32" preserveAspectRatio="none" aria-hidden="true"><defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="currentColor" stop-opacity=".28"/><stop offset="1" stop-color="currentColor" stop-opacity="0"/></linearGradient></defs><path d="${d} L100,32 L0,32 Z" fill="url(#${id})"/><path d="${d}" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" vector-effect="non-scaling-stroke"/></svg>`;
+}
+const last7 = () => { const out = []; for (let i = 6; i >= 0; i--) { const d = new Date(); d.setDate(d.getDate() - i); out.push(dayOf(d)); } return out; };
+const deltaChip = (now, before) => { if (!before) return ""; const d = Math.round((now - before) / before * 100); return `<span class="chip ${d >= 0 ? "green" : "red"}">${d >= 0 ? "↑" : "↓"} ${Math.abs(d)} %</span>`; };
 const discChip = (d) => d ? `<span class="chip red">${d.type === "codigo" ? "Código " + esc(d.code) : d.type === "pin" ? d.pct + " % con PIN" : d.pct + " % manual"}</span>` : `<span class="nodisc" style="color:var(--faint)">—</span>`;
 
 // Panel de quien solo ve lo suyo: lo vendido, unidades y stock. Sin costos, márgenes ni caja de la tienda.
@@ -339,10 +353,10 @@ function myPanelView() {
   return topbar(`${greet()}, ${esc(me.name)}`, `Mis ventas · ${fmtDL(new Date())}`, `<a href="#venta" class="btn red">${I.plus}<span class="hide-m">Nueva venta</span></a>`) + `
   <div class="content">
     <section class="kpis">
-      <div class="card kpi hero"><div class="lbl">Vendido hoy<span class="ico">${I.trend}</span></div><div class="val">${money(total)}</div><div class="foot">${s.length} ${s.length === 1 ? "venta" : "ventas"}</div></div>
-      <div class="card kpi"><div class="lbl">Unidades hoy<span class="ico">${I.inventario}</span></div><div class="val">${units}</div><div class="foot">${s.length ? (units / s.length).toFixed(1) + " por venta" : "Todavía sin ventas"}</div></div>
-      <div class="card kpi"><div class="lbl">Vendido en 7 días<span class="ico">${I.ticket}</span></div><div class="val">${money(wTotal)}</div><div class="foot">${wUnits} unidades</div></div>
-      <div class="card kpi"><div class="lbl">Stock bajo<span class="ico red">${I.warn}</span></div><div class="val red">${lowStock().length}</div><div class="foot">variantes por agotarse</div></div>
+      <div class="card kpi hero k1"><div class="lbl">Vendido hoy<span class="ico">${I.trend}</span></div><div class="val">${money(total)}</div><div class="foot">${s.length} ${s.length === 1 ? "venta" : "ventas"}</div>${spark(ws.map(x => x.reduce((a, y) => a + y.total, 0)))}</div>
+      <div class="card kpi k2"><div class="lbl">Unidades hoy<span class="ico">${I.inventario}</span></div><div class="val">${units}</div><div class="foot">${s.length ? (units / s.length).toFixed(1) + " por venta" : "Todavía sin ventas"}</div>${spark(perDay)}</div>
+      <div class="card kpi k3"><div class="lbl">Vendido en 7 días<span class="ico">${I.ticket}</span></div><div class="val">${money(wTotal)}</div><div class="foot">${wUnits} unidades</div>${spark(ws.map(x => x.length))}</div>
+      <div class="card kpi k4 warn"><div class="lbl">Stock bajo<span class="ico">${I.warn}</span></div><div class="val red">${lowStock().length}</div><div class="foot">variantes por agotarse</div><div class="meter"><i style="width:${Math.min(100, lowStock().length / Math.max(1, DB.products.reduce((a, p) => a + p.variants.length, 0)) * 100)}%"></i></div></div>
     </section>
     <div class="grid-2">
       <div class="stack">
