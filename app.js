@@ -163,7 +163,7 @@ function render() {
   <div class="shell ${v === "venta" && S.cart.length ? "has-cart" : ""} ${S.sb ? "sb-collapsed" : ""}">
     <aside class="sidebar">
       <button class="sb-toggle" data-act="sb" aria-label="${S.sb ? "Expandir menú" : "Contraer menú"}" title="${S.sb ? "Expandir menú" : "Contraer menú"}">${I.chev}</button>
-      <div class="brand"><img class="brand-full" src="icons/logo-w.png" alt="${esc(DB.settings.store)}"><img class="brand-mono" src="icons/mono-w.png" alt=""><span class="brand-role">${esc(role().label)}</span></div>
+      <div class="brand"><img class="brand-full" src="icons/logo-c.png" alt="${esc(DB.settings.store)}"><img class="brand-mono" src="icons/mono.png" alt=""><span class="brand-role">${esc(role().label)}</span></div>
       <nav class="nav">${NAV.filter(([k]) => role().views.includes(k)).map(([k, l]) => `<a href="#${k}" class="${v === k ? "active" : ""}" data-tip="${l}">${I[k]}<span class="nl">${l}</span>${tabBadge(k, low)}</a>`).join("")}</nav>
       <div class="side-foot">
         ${installHTML()}
@@ -180,7 +180,7 @@ function render() {
     </div>
   </div>`;
   bind();
-  if (S.lastView !== v) { S.lastView = v; animateView(); }
+  if (S.lastView !== v) { const first = !S.lastView; S.lastView = v; animateView(first); }
   const ci = $(".cart-items-d");
   if (ci) {
     ci.scrollTop = _ciTop;
@@ -1030,10 +1030,12 @@ setInterval(() => {
 
 /* ---------- Animaciones: entrada escalonada y números que suben ---------- */
 const reduceMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
-function animateView() {
+function animateView(first) {
   if (reduceMotion()) return;
   const c = $(".content"); if (!c) return;
   c.classList.remove("enter"); void c.offsetWidth; c.classList.add("enter");
+  const tb = $(".topbar"); if (tb) { tb.classList.remove("enter"); void tb.offsetWidth; tb.classList.add("enter"); }
+  if (!first) { let bar = document.getElementById("page-bar"); if (!bar) { bar = document.createElement("div"); bar.id = "page-bar"; document.body.appendChild(bar); } bar.classList.remove("go"); void bar.offsetWidth; bar.classList.add("go"); }
   document.querySelectorAll(".kpi .val").forEach(el => {
     const txt = el.textContent, m = txt.match(/^(.*?)([\d,]+(?:\.\d+)?)(.*)$/); if (!m) return;
     const target = parseFloat(m[2].replace(/,/g, "")); if (!(target > 0)) return;
