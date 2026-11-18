@@ -475,3 +475,18 @@ body.lock{overflow:hidden}
 .chart-x{display:flex;gap:4px;margin-top:6px}
 .chart-x span{flex:1;min-width:0;text-align:center;font-size:10.5px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:visible}
 .card-h .hint{white-space:nowrap}
+
+/* Carrito en computadora: alto fijo a la pantalla, lista con scroll, cobro siempre visible */
+@media (min-width:901px){
+  .cart-panel{display:flex;flex-direction:column;max-height:calc(100dvh - 116px);padding:16px 16px 14px!important}
+  .cart-panel>.row{flex-shrink:0}
+  .cart-items-d{flex:1 1 auto;min-height:72px;overflow-y:auto;overscroll-behavior:contain;margin:0 -8px;padding:0 8px;border-bottom:1px solid var(--line)}
+  .cart-foot-d{flex-shrink:0;gap:8px!important;padding-top:12px!important}
+  .cart-foot-d .disc-opts button{height:36px}
+  .cart-foot-d .totals{padding:4px 4px 2px}
+  .cart-foot-d .pay button{height:40px}
+}
+@media (min-width:901px) and (max-height:760px){
+  .cart-foot-d .cf-disc .row{display:none}
+  .cart-foot-d .totals div:first-child{display:none}
+}

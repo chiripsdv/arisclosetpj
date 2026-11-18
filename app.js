@@ -157,6 +157,7 @@ function render() {
   const low = lowStock().length;
   const todaySales = salesOf(today()).filter(x => can("seeAllSales") || x.seller === me.id);
   const todayTotal = todaySales.reduce((a, s) => a + s.total, 0);
+  const _ci = $(".cart-items-d"), _ciTop = _ci ? _ci.scrollTop : 0;
   app.innerHTML = `
   <div class="shell ${v === "venta" && S.cart.length ? "has-cart" : ""}">
     <aside class="sidebar">
@@ -177,6 +178,12 @@ function render() {
     </div>
   </div>`;
   bind();
+  const ci = $(".cart-items-d");
+  if (ci) {
+    ci.scrollTop = _ciTop;
+    // la prenda recién agregada se muestra aunque esté al final de la lista
+    if (S.lastAdd && Date.now() - S.lastAdd.at < 400) { const it = ci.querySelector(`[data-vid="${S.lastAdd.vid}"]`); if (it) it.scrollIntoView({ block: "nearest" }); }
+  }
   if (S.cartOpen) {
     if (v === "venta" && S.cart.length && window.innerWidth <= 900) {
       const old = $(".cs-items"), top = old ? old.scrollTop : 0;
@@ -355,7 +362,7 @@ function ventaView() {
   </div>`;
 }
 function cartItemsHTML() {
-  return S.cart.length ? S.cart.map(c => `<div class="cart-item ${S.lastScan && S.lastScan.vid === c.vid && Date.now() - S.lastScan.at < 1500 ? "flash" : ""}">${ART.thumb(prodById(c.pid), "sm")}<div class="i"><b>${esc(c.name)}</b><span>${esc(c.size)} · ${esc(c.color)} · ${money(c.price)}</span></div>
+  return S.cart.length ? S.cart.map(c => `<div data-vid="${c.vid}" class="cart-item ${S.lastScan && S.lastScan.vid === c.vid && Date.now() - S.lastScan.at < 1500 ? "flash" : ""}">${ART.thumb(prodById(c.pid), "sm")}<div class="i"><b>${esc(c.name)}</b><span>${esc(c.size)} · ${esc(c.color)} · ${money(c.price)}</span></div>
     <div class="qty"><button data-qty="${c.vid}|-1" aria-label="Quitar uno">−</button><b>${c.qty}</b><button class="plus" data-qty="${c.vid}|1" aria-label="Agregar uno">+</button></div></div>`).join("") : `<div class="empty">Tocá una talla o escaneá el código</div>`;
 }
 function cartFootHTML() {
@@ -378,7 +385,7 @@ function cartFootHTML() {
 function cartHTML() {
   const n = cartCount();
   return `<div class="row" style="padding:0 0 8px;border:none"><span class="section-title">Carrito · ${n} ${n === 1 ? "artículo" : "artículos"}</span>${S.cart.length ? `<button class="btn ghost sm" data-act="clearcart">Vaciar</button>` : ""}</div>
-    ${cartItemsHTML()}
+    <div class="cart-items-d">${cartItemsHTML()}</div>
     <div class="cart-foot-d">${cartFootHTML()}</div>`;
 }
 // Teléfono: el carrito es una pantalla completa con la lista desplazable y el cobro fijo abajo
@@ -402,7 +409,7 @@ function addToCart(vid, scanned) {
   if (have + 1 > r.v.stock) return toast(`Solo hay ${r.v.stock} en stock`, true);
   if (inCart) inCart.qty++; else S.cart.push({ pid: r.p.id, vid, partner: r.p.partner, code: r.v.code, name: r.p.name, size: r.v.size, color: r.v.color, qty: 1, price: r.p.price, cost: r.p.cost });
   render();
-  S.lastAdd = { at: Date.now(), name: `${r.p.name} ${r.v.size}` };
+  S.lastAdd = { at: Date.now(), vid, name: `${r.p.name} ${r.v.size}` };
   clearTimeout(S._cbT); S._cbT = setTimeout(() => { const el = $(".cartbar .cb-sub"); if (el) el.textContent = "Ver carrito"; const bar = $(".cartbar"); if (bar) bar.classList.remove("bump"); }, 1800);
   if (scanned) { S.lastScan = { vid, at: Date.now() }; toast(`✓ ${r.p.name} ${r.v.size} ${r.v.color} · ${money(r.p.price)}`); }
 }
