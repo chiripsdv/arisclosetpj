@@ -490,3 +490,21 @@ body.lock{overflow:hidden}
   .cart-foot-d .cf-disc .row{display:none}
   .cart-foot-d .totals div:first-child{display:none}
 }
+
+/* Ventas: artículos resumidos y detalle */
+tr.clickable{cursor:pointer}
+tr.clickable:hover td{background:#FAF7F7}
+.it-one{display:inline-block;max-width:260px;overflow:hidden;text-overflow:ellipsis;vertical-align:middle}
+.it-many{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;background:var(--bg);border-radius:999px;padding:4px 10px;color:var(--ink)}
+tr.clickable:hover .it-many{background:var(--ink);color:#fff}
+.sd-meta{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.sd-items{border-top:1px solid var(--line);border-bottom:1px solid var(--line);max-height:min(320px,40vh);overflow-y:auto;overscroll-behavior:contain}
+.sd-amt{font-size:13.5px;white-space:nowrap}
+.sd-total{color:var(--ink);font-weight:700;font-size:16px;padding:4px 0}
+.tl-short{display:none}
+@media (max-width:1300px){.tl-long{display:none}.tl-short{display:inline}}
+
+td .tk{display:block;font-size:11px;color:var(--muted);font-weight:500}
+@media (max-width:1250px){.live-list .who-n{display:none}.live-list th,.live-list td{padding-left:12px;padding-right:12px}.it-one{max-width:170px}}
+@media (min-width:901px) and (max-width:1300px){.grid-2{grid-template-columns:minmax(0,1fr) 280px}}
+@media (min-width:901px) and (max-width:1180px){.grid-2{grid-template-columns:minmax(0,1fr)}.grid-2>.stack{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));align-items:start}}

@@ -257,7 +257,7 @@ function panelView() {
   const byPartner = DB.partners.map(p => { const ps = salesOf(t).map(x => scopeSale(x, p.id)).filter(Boolean); return { p, t: ps.reduce((a, x) => a + x.total, 0), q: ps.reduce((a, x) => a + x.items.reduce((b, i) => b + i.qty, 0), 0) }; });
   const pmax = Math.max(1, ...byPartner.map(x => x.t));
   return topbar("Panel", S.partner === "all" ? fmtDL(new Date()) : `${esc(partnerById(S.partner).name)} · ${fmtDL(new Date())}`, `
-    ${!mine ? `<label class="toggle hide-m" title="Genera una venta de otro dispositivo cada pocos segundos"><input type="checkbox" id="simToggle" ${S.sim ? "checked" : ""}> Simular ventas de otros dispositivos</label>` : ""}
+    ${!mine ? `<label class="toggle hide-m" title="Genera una venta de otro dispositivo cada pocos segundos"><input type="checkbox" id="simToggle" ${S.sim ? "checked" : ""}> <span class="tl-long">Simular ventas de otros dispositivos</span><span class="tl-short">Simular</span></label>` : ""}
     <a href="#venta" class="btn red">${I.plus}<span class="hide-m">Nueva venta</span></a>`) + `
   <div class="content">
     ${partnerSeg()}
@@ -271,8 +271,8 @@ function panelView() {
     <div class="grid-2">
       <section class="card">
         <div class="card-h"><h2>${mine ? "Mis ventas de hoy" : "Ventas en vivo"} <span class="live">EN VIVO</span></h2><span class="hint live-count">${list.length} ${list.length === 1 ? "venta" : "ventas"} · ${money(list.reduce((a, x) => a + x.total, 0))}</span><a href="#reportes" class="btn sm ${role().views.includes("reportes") ? "" : "hide-m hide-d"}">Reportes</a></div>
-        <div class="tbl-wrap live-list"><table><thead><tr><th>Hora</th><th>Ticket</th><th>Vendedora</th><th>Artículos</th><th>Descuento</th><th class="r">Total</th></tr></thead><tbody>
-        ${list.length ? list.map((x, i) => `<tr class="${i === 0 ? "hl" : ""}"><td><b>${fmtT(x.at)}</b></td><td style="color:var(--muted)">#${x.n}</td><td><span class="who"><span class="avatar ${x.seller === "u1" ? "red" : x.seller === "u3" ? "grey" : ""}">${esc(userById(x.seller).name[0])}</span>${esc(userById(x.seller).name)}</span></td><td>${esc(x.items.map(i => `${i.qty > 1 ? i.qty + " × " : ""}${i.name} ${i.size}`).join(", "))}</td><td>${discChip(x.discount)}</td><td class="r"><b>${money(x.total)}</b></td></tr>`).join("") : `<tr><td colspan="6" class="empty">Todavía no hay ventas hoy. ¡Registrá la primera!</td></tr>`}
+        <div class="tbl-wrap live-list"><table><thead><tr><th>Hora</th><th>Vendedora</th><th>Artículos</th><th>Descuento</th><th class="r">Total</th></tr></thead><tbody>
+        ${list.length ? list.map((x, i) => `<tr class="${i === 0 ? "hl" : ""} clickable" data-sale-detail="${x.id}" title="Ver detalle"><td><b>${fmtT(x.at)}</b><span class="tk">#${x.n}</span></td><td><span class="who"><span class="avatar ${x.seller === "u1" ? "red" : x.seller === "u3" ? "grey" : ""}" title="${esc(userById(x.seller).name)}">${esc(userById(x.seller).name[0])}</span><span class="who-n">${esc(userById(x.seller).name)}</span></span></td><td>${itemsCell(x)}</td><td>${discChip(x.discount)}</td><td class="r"><b>${money(x.total)}</b></td></tr>`).join("") : `<tr><td colspan="6" class="empty">Todavía no hay ventas hoy. ¡Registrá la primera!</td></tr>`}
         </tbody></table></div>
       </section>
       <div class="stack">
@@ -297,6 +297,29 @@ const HOURS = Array.from({ length: 12 }, (_, i) => 9 + i);
 const peakHint = (hours) => { const m = Math.max(...hours); return m > 0 ? `Pico ${HOURS[hours.indexOf(m)]} h · ${money(m)}` : "9 h – 20 h"; };
 const dayShort = (d) => new Date(d + "T12:00").toLocaleDateString("es", { weekday: "short" }).replace(".", "");
 const dayNum = (d) => String(+d.slice(8));
+// Celda de artículos: una prenda = su nombre; varias = "N artículos" (el detalle se abre al tocar la fila)
+function itemsCell(x) {
+  const units = x.items.reduce((a, i) => a + i.qty, 0);
+  if (x.items.length === 1) { const i = x.items[0]; return `<span class="it-one">${i.qty > 1 ? i.qty + " × " : ""}${esc(i.name)} <span class="hint">${esc(i.size)}</span></span>`; }
+  return `<span class="it-many">${I.ticket}${units} artículos</span>`;
+}
+function saleDetailModal(id) {
+  const x = DB.sales.find(s => s.id === id); if (!x) return;
+  const showCost = can("canSeeProfit");
+  const split = DB.partners.length > 1 && can("seeAllSales") ? DB.partners.map(p => ({ p, v: scopeSale(x, p.id) })).filter(o => o.v) : [];
+  const cost = x.items.reduce((a, i) => a + i.cost * i.qty, 0);
+  modal(`<div class="modal-h"><div><h3>Ticket #${x.n}</h3><div class="hint">${fmtDL(new Date(x.at))} · ${fmtT(x.at)}</div></div><button class="btn icon ghost" data-close>${I.x}</button></div>
+    <div class="sd-meta"><span class="who"><span class="avatar ${x.seller === "u1" ? "red" : x.seller === "u3" ? "grey" : ""}">${esc(userById(x.seller).name[0])}</span>${esc(userById(x.seller).name)}</span><span class="chip">${esc(x.pay)}</span>${x.discount ? discChip(x.discount) : ""}${x.status !== "cerrada" ? `<span class="chip red">${esc(x.status)}</span>` : ""}</div>
+    <div class="sd-items">${x.items.map(i => `<div class="cart-item">${ART.thumb(prodById(i.pid) || { cat: "" }, "sm")}<div class="i"><b>${esc(i.name)}</b><span>${esc(i.size)} · ${esc(i.color)} · ${i.qty} × ${money(i.price)}${split.length > 1 ? ` · ${esc(partnerById(itemPartner(i)).name)}` : ""}</span></div><b class="sd-amt">${money(i.price * i.qty)}</b></div>`).join("")}</div>
+    <div class="totals" style="padding:0 2px">
+      <div><span>${x.items.reduce((a, i) => a + i.qty, 0)} artículos · subtotal</span><span>${money(x.subtotal)}</span></div>
+      ${x.discount ? `<div class="d"><span>Descuento ${x.discount.pct} %${x.discount.type === "pin" ? " · autorizó " + esc(userById(x.discount.by).name) : x.discount.type === "codigo" ? " · código " + esc(x.discount.code) : ""}</span><span>− ${money(x.discount.amount)}</span></div>` : ""}
+      <div class="sd-total"><span>Total</span><span>${money(x.total)}</span></div>
+      ${showCost ? `<div><span>Costo de la mercadería</span><span>${money(cost)}</span></div><div><span>Margen</span><span style="color:var(--green);font-weight:600">${money(x.total - cost)} · ${x.total ? Math.round((x.total - cost) / x.total * 100) : 0} %</span></div>` : ""}
+    </div>
+    ${split.length > 1 ? `<div class="split">${split.map(o => `<span class="who">${pDot(o.p.id)}${esc(o.p.name)} <b>${money(o.v.total)}</b></span>`).join("")}</div>` : ""}
+    <div class="ticket-actions"><button class="btn" data-act="print" data-sale="${x.id}">${I.print} Reimprimir</button><button class="btn red" data-act="reticket" data-sale="${x.id}">${I.wa} Enviar ticket</button></div>`);
+}
 const discChip = (d) => d ? `<span class="chip red">${d.type === "codigo" ? "Código " + esc(d.code) : d.type === "pin" ? d.pct + " % con PIN" : d.pct + " % manual"}</span>` : `<span style="color:var(--faint)">—</span>`;
 
 // Panel de quien solo ve lo suyo: lo vendido, unidades y stock. Sin costos, márgenes ni caja de la tienda.
@@ -321,7 +344,7 @@ function myPanelView() {
       <div class="stack">
         <section class="card"><div class="card-h"><h2>Mis ventas de hoy</h2><span class="hint">${s.length} · ${money(total)}</span></div>
           <div class="tbl-wrap live-list"><table><thead><tr><th>Hora</th><th>Ticket</th><th>Artículos</th><th class="r">Uds.</th><th>Pago</th><th class="r">Total</th></tr></thead><tbody>
-          ${list.length ? list.map((x, i) => `<tr class="${i === 0 ? "hl" : ""}"><td><b>${fmtT(x.at)}</b></td><td style="color:var(--muted)">#${x.n}</td><td>${esc(x.items.map(i => `${i.qty > 1 ? i.qty + " × " : ""}${i.name} ${i.size}`).join(", "))}</td><td class="r">${x.items.reduce((a, i) => a + i.qty, 0)}</td><td><span class="chip">${esc(x.pay)}</span></td><td class="r"><b>${money(x.total)}</b></td></tr>`).join("") : `<tr><td colspan="6" class="empty">Todavía no vendiste hoy. ¡A vender!</td></tr>`}
+          ${list.length ? list.map((x, i) => `<tr class="${i === 0 ? "hl" : ""} clickable" data-sale-detail="${x.id}" title="Ver detalle"><td><b>${fmtT(x.at)}</b></td><td style="color:var(--muted)">#${x.n}</td><td>${itemsCell(x)}</td><td class="r">${x.items.reduce((a, i) => a + i.qty, 0)}</td><td><span class="chip">${esc(x.pay)}</span></td><td class="r"><b>${money(x.total)}</b></td></tr>`).join("") : `<tr><td colspan="6" class="empty">Todavía no vendiste hoy. ¡A vender!</td></tr>`}
           </tbody></table></div></section>
         <section class="card"><div class="card-h"><h2>Lo que vendí hoy</h2><span class="hint">por producto</span></div>
           <div class="tbl-wrap"><table><thead><tr><th>Producto</th><th>Variante</th><th class="r">Uds.</th><th class="r">Vendido</th></tr></thead><tbody>
@@ -734,7 +757,7 @@ function repView() {
     body = `<section class="card"><div class="card-h"><h2>Desempeño por vendedora</h2></div>${tbl(`<th>Vendedora</th><th class="r">Tickets</th><th class="r">Piezas</th><th class="r">Bruto</th><th class="r">Descuentos</th><th class="r">Con desc.</th><th class="r">Con PIN</th><th class="r">Neto</th><th class="r">Ticket prom.</th>${mhead}`, rows.map(x => `<tr><td><span class="who"><span class="avatar ${x.u.role === "propietaria" ? "red" : x.u.role === "vendedor" ? "grey" : ""}">${esc(x.u.name[0])}</span><b>${esc(x.u.name)}</b></span></td><td class="r">${x.n}</td><td class="r">${x.q}</td><td class="r">${money(x.gross)}</td><td class="r" style="color:var(--red)">${x.disc ? "− " + money(x.disc) : "—"}</td><td class="r">${x.nd} <span class="hint">(${(x.nd / x.n * 100).toFixed(0)} %)</span></td><td class="r">${x.pin}</td><td class="r"><b>${money(x.net)}</b></td><td class="r">${money(x.net / x.n)}</td>${mcell(x)}</tr>`))}</section>
     <section class="card"><div class="card-h"><h2>Descuentos otorgados</h2><span class="hint">quién, cuánto y por qué</span></div>${tbl(`<th>Fecha</th><th>Ticket</th><th>Vendedora</th><th>Tipo</th><th class="r">%</th><th class="r">Monto</th><th>Autorizó</th>`, s.filter(x => x.discount).slice().reverse().map(x => `<tr><td>${fmtD(x.at)} ${fmtT(x.at)}</td><td>#${x.n}</td><td>${esc(userById(x.seller).name)}</td><td>${discChip(x.discount)}</td><td class="r">${x.discount.pct} %</td><td class="r" style="color:var(--red)">− ${money(x.discount.amount)}</td><td>${x.discount.type === "pin" ? esc(userById(x.discount.by).name) : x.discount.type === "codigo" ? "Código" : "Dentro de límite"}</td></tr>`), "Sin descuentos en el período")}</section>`;
   } else if (tab === "tickets") {
-    body = `<section class="card"><div class="card-h"><h2>Tickets del período</h2><span class="hint">${s.length} ventas</span></div>${tbl(`<th>Fecha</th><th>Ticket</th><th>Vendedora</th><th>Artículos</th><th>Pago</th><th class="r">Bruto</th><th class="r">Desc.</th><th class="r">Total</th>`, s.slice().reverse().map(x => `<tr><td>${fmtD(x.at)} <span class="hint">${fmtT(x.at)}</span></td><td>#${x.n}</td><td>${esc(userById(x.seller).name)}</td><td>${esc(x.items.map(i => `${i.qty > 1 ? i.qty + " × " : ""}${i.name} ${i.size} ${i.color}`).join(", "))}</td><td><span class="chip">${esc(x.pay)}</span></td><td class="r">${money(x.subtotal)}</td><td class="r" style="color:var(--red)">${x.discount ? "− " + money(x.discount.amount) : "—"}</td><td class="r"><b>${money(x.total)}</b></td></tr>`))}</section>`;
+    body = `<section class="card"><div class="card-h"><h2>Tickets del período</h2><span class="hint">${s.length} ventas</span></div>${tbl(`<th>Fecha</th><th>Ticket</th><th>Vendedora</th><th>Artículos</th><th>Pago</th><th class="r">Bruto</th><th class="r">Desc.</th><th class="r">Total</th>`, s.slice().reverse().map(x => `<tr class="clickable" data-sale-detail="${x.id}" title="Ver detalle"><td>${fmtD(x.at)} <span class="hint">${fmtT(x.at)}</span></td><td>#${x.n}</td><td>${esc(userById(x.seller).name)}</td><td>${itemsCell(x)}</td><td><span class="chip">${esc(x.pay)}</span></td><td class="r">${money(x.subtotal)}</td><td class="r" style="color:var(--red)">${x.discount ? "− " + money(x.discount.amount) : "—"}</td><td class="r"><b>${money(x.total)}</b></td></tr>`))}</section>`;
   } else if (tab === "inventario") {
     const rows = DB.products.filter(inPartner).map(p => { const st = p.variants.reduce((a, v) => a + v.stock, 0); const sold = D.lines.filter(l => l.pid === p.id).reduce((a, l) => a + l.qty, 0); return { p, st, sold, costV: st * p.cost, priceV: st * p.price, low: p.variants.filter(v => v.stock <= DB.settings.lowStock).length, days: sold ? Math.round(st / (sold / days.length)) : null }; }).sort((a, b) => b.priceV - a.priceV);
     const tc = rows.reduce((a, r) => a + r.costV, 0), tp = rows.reduce((a, r) => a + r.priceV, 0), tu = rows.reduce((a, r) => a + r.st, 0);
@@ -939,10 +962,11 @@ function bind() {
   app.querySelectorAll("[data-role]").forEach(s => s.onchange = (e) => { userById(e.target.dataset.role).role = e.target.value; save(); render(); toast("Rol actualizado"); });
 }
 document.addEventListener("click", (e) => {
-  const t = e.target.closest("[data-act],[data-add],[data-qty],[data-disc],[data-pay],[data-inv],[data-rep],[data-reptab],[data-photo],[data-addcat],[data-delcat],[data-lim],[data-toggle],[data-partner],[data-editpartner],[data-delpartner],[data-assign],[data-editprod],[data-close]");
+  const t = e.target.closest("[data-act],[data-add],[data-qty],[data-disc],[data-pay],[data-inv],[data-rep],[data-reptab],[data-photo],[data-addcat],[data-delcat],[data-lim],[data-toggle],[data-partner],[data-editpartner],[data-delpartner],[data-assign],[data-editprod],[data-sale-detail],[data-close]");
   if (!t) { if (e.target.classList.contains("overlay")) { closeModal(); if (S.cartOpen) render(); } return; }
   if (t.dataset.close != null) { if (t.closest(".cart-screen")) S.cartOpen = false; closeModal(); if (S.cartOpen) render(); return; }
   if (t.dataset.editprod) return editProdModal(t.dataset.editprod);
+  if (t.dataset.saleDetail) return saleDetailModal(t.dataset.saleDetail);
   if (t.dataset.partner) { S.partner = t.dataset.partner; return render(); }
   if (t.dataset.editpartner) return partnerModal(t.dataset.editpartner);
   if (t.dataset.delpartner) { DB.partners = DB.partners.filter(p => p.id !== t.dataset.delpartner); if (S.partner === t.dataset.delpartner) S.partner = "all"; save(); closeModal(); return render(); }
@@ -968,6 +992,7 @@ document.addEventListener("click", (e) => {
   else if (a === "cobrar") cobrar();
   else if (a === "print") printTicket(t.dataset.sale);
   else if (a === "wa") waSend(t.dataset.sale);
+  else if (a === "reticket") { const x = DB.sales.find(s => s.id === t.dataset.sale); if (x) showTicket(x); }
   else if (a === "share") shareTicket(t.dataset.sale);
   else if (a === "newpartner") partnerModal();
   else if (a === "delprod") { if (confirm("¿Eliminar este producto?")) { DB.products = DB.products.filter(x => x.id !== t.dataset.pid); save(); closeModal(); render(); toast("Producto eliminado"); } }
