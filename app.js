@@ -1060,62 +1060,170 @@ function exportCSV() {
 }
 
 /* ---------- Catálogos ---------- */
-function catView() {
-  const list = (title, key, items, render) => `<section class="card"><div class="card-h"><h2>${title}</h2>${can("canEditCatalog") ? `<button class="btn sm" data-addcat="${key}">${I.plus} Agregar</button>` : ""}</div><div class="card-b list" style="padding-top:4px;padding-bottom:4px">${items.map((it, i) => `<div class="row">${render(it)}${can("canEditCatalog") ? `<button class="btn ghost sm" data-delcat="${key}|${i}">${I.x}</button>` : ""}</div>`).join("")}</div></section>`;
-  return topbar("Catálogos", "Listas que usa toda la app", me.role === "propietaria" && !CLOUD ? `<button class="btn ghost" data-act="reset" title="Vuelve a los datos de ejemplo">Reiniciar demo</button>` : "") + `
-  <div class="content"><div class="grid-2" style="grid-template-columns:repeat(auto-fit,minmax(300px,1fr))">
-    <section class="card"><div class="card-h"><h2>Ajustes</h2></div><form id="settingsForm" class="card-b form">
-      <div class="field"><label>Nombre de la tienda</label><input name="store" value="${esc(DB.settings.store)}"></div>
-      <div class="field"><label>Moneda</label><input name="currency" value="${esc(DB.settings.currency)}" maxlength="3"></div>
-      <div class="field"><label>Alerta de stock bajo (≤)</label><input name="lowStock" type="number" min="0" value="${DB.settings.lowStock}"></div>
-      <div class="field"><label>Margen mínimo sobre costo (%)</label><input name="minMargin" type="number" min="0" value="${DB.settings.minMargin}"></div>
-      <div class="field"><label>Código de país para WhatsApp</label><input name="waCountry" inputmode="numeric" value="${esc(DB.settings.waCountry)}"></div>
-      ${CLOUD ? "" : `<div class="field"><label>Servidor del escáner celular</label><input name="relay" value="${esc(DB.settings.relay)}"></div>`}
-      <div class="full section-title" style="padding-top:6px">Recibo impreso</div>
-      <div class="field"><label>Ancho del rollo</label><select name="paper"><option value="80" ${DB.settings.paper !== "58" ? "selected" : ""}>80 mm (estándar)</option><option value="58" ${DB.settings.paper === "58" ? "selected" : ""}>58 mm (pequeña)</option></select></div>
-      <div class="field"><label>Logo en el recibo</label><select name="rcLogo"><option value="1" ${DB.settings.rcLogo ? "selected" : ""}>Sí</option><option value="0" ${!DB.settings.rcLogo ? "selected" : ""}>No</option></select></div>
-      <div class="field full"><label>Dirección</label><input name="rcAddress" value="${esc(DB.settings.rcAddress)}" placeholder="Ej. Del parque central 1c al sur, Managua"></div>
-      <div class="field"><label>Teléfono</label><input name="rcPhone" value="${esc(DB.settings.rcPhone)}" inputmode="tel"></div>
-      <div class="field"><label>RUC (opcional)</label><input name="rcRuc" value="${esc(DB.settings.rcRuc)}"></div>
-      <div class="field full"><label>Mensaje al pie</label><textarea name="rcFooter" rows="2">${esc(DB.settings.rcFooter)}</textarea></div>
-      <div class="full"><button class="btn dark" type="submit" ${can("canEditCatalog") ? "" : "disabled"}>Guardar ajustes</button></div></form></section>
-    <section class="card"><div class="card-h"><h2>Socios</h2>${can("canEditCatalog") ? `<button class="btn sm" data-act="newpartner">${I.plus} Agregar</button>` : ""}</div><div class="card-b list" style="padding-top:4px;padding-bottom:4px">
-      ${DB.partners.map(p => { const np = DB.products.filter(x => x.partner === p.id).length; return `<div class="row"><span class="who">${pDot(p.id)}<span><span class="t">${esc(p.name)}</span><span class="s">${np} productos · asume ${p.share} % de gastos compartidos</span></span></span>${can("canEditCatalog") ? `<button class="btn ghost sm" data-editpartner="${p.id}">Editar</button>` : ""}</div>`; }).join("")}
-      ${DB.partners.reduce((a, p) => a + (+p.share || 0), 0) !== 100 ? `<div class="err" style="padding:8px 0">Los % de gastos compartidos suman ${DB.partners.reduce((a, p) => a + (+p.share || 0), 0)} %; deberían sumar 100 %.</div>` : ""}
-    </div></section>
-    ${list("Códigos de descuento", "discountCodes", DB.discountCodes, d => `<span><span class="t">${esc(d.code)}</span><span class="s">${d.pct} % · ${d.uses} de ${d.maxUses} usos</span></span><span class="chip ${d.active && d.uses < d.maxUses ? "green" : "red"}">${d.active && d.uses < d.maxUses ? "Activo" : "Agotado"}</span>`)}
-    ${list("Categorías", "categories", DB.categories, c => `<span class="t">${esc(c)}</span>`)}
-    ${list("Marcas", "brands", DB.brands, c => `<span class="t">${esc(c)}</span>`)}
-    ${list("Formas de pago", "payMethods", DB.payMethods, c => `<span class="t">${esc(c)}</span>`)}
-    ${list("Categorías de gasto", "expenseCats", DB.expenseCats, c => `<span class="t">${esc(c)}</span>`)}
-  </div></div>`;
-}
+/* ---------- Catálogos: tarjetas que abren su detalle ---------- */
+// Íconos de la librería Lucide (licencia ISC, vendor/lucide.js)
+const LI = (n, cls = "") => ((window.LUCIDE && window.LUCIDE[n]) || "").replace("<svg", `<svg class="li ${cls}" aria-hidden="true"`);
 const CAT_TABLE = { categories: "categories", brands: "brands", payMethods: "payment_methods", expenseCats: "expense_categories" };
-function addCatModal(key) {
-  if (key === "discountCodes") {
-    return modal(`<div class="modal-h"><h3>Nuevo código</h3><button class="btn icon ghost" data-close>${I.x}</button></div><form id="f" class="form">
-      <div class="field"><label>Código</label><input name="code" required style="text-transform:uppercase"></div><div class="field"><label>Porcentaje</label><input name="pct" type="number" min="1" max="90" required></div>
-      <div class="field full"><label>Usos máximos</label><input name="max" type="number" min="1" value="50"></div><button class="btn dark lg full">Crear</button></form>`, f => {
-      if (CLOUD) return act(() => sbq(sb.from("discount_codes").upsert({ code: f.get("code").toUpperCase().trim(), pct: +f.get("pct"), max_uses: +f.get("max"), active: true }, { onConflict: "code" })), "Código creado"); DB.discountCodes.push({ code: f.get("code").toUpperCase().trim(), pct: +f.get("pct"), maxUses: +f.get("max"), uses: 0, active: true }); save(); render(); });
-  }
-  modal(`<div class="modal-h"><h3>Agregar</h3><button class="btn icon ghost" data-close>${I.x}</button></div><form id="f" class="form"><div class="field full"><label>Nombre</label><input name="v" required autofocus></div><button class="btn dark lg full">Agregar</button></form>`, f => {
-    if (CLOUD) return act(() => sbq(sb.from(CAT_TABLE[key]).upsert({ name: f.get("v").trim(), active: true }, { onConflict: "name" })), "Agregado"); DB[key].push(f.get("v").trim()); save(); render(); });
+const CAT = {
+  tienda: { title: "Ajustes de la tienda", icon: "store", tone: "t-rose" },
+  recibo: { title: "Recibo impreso", icon: "printer", tone: "t-gold" },
+  partners: { title: "Socios", icon: "handshake", tone: "t-berry", noun: ["socio", "socios"] },
+  discountCodes: { title: "Códigos de descuento", icon: "ticket-percent", tone: "t-sage", noun: ["código activo", "códigos activos"] },
+  categories: { title: "Categorías", icon: "shirt", tone: "t-rose", noun: ["categoría", "categorías"], one: "categoría" },
+  brands: { title: "Marcas", icon: "gem", tone: "t-gold", noun: ["marca", "marcas"], one: "marca" },
+  payMethods: { title: "Formas de pago", icon: "wallet-cards", tone: "t-berry", noun: ["forma de pago", "formas de pago"], one: "forma de pago" },
+  expenseCats: { title: "Categorías de gasto", icon: "receipt-text", tone: "t-sage", noun: ["categoría", "categorías"], one: "categoría de gasto" }
+};
+const plural = (n, [a, b]) => `${n} ${n === 1 ? a : b}`;
+const shareSum = () => DB.partners.reduce((a, p) => a + (+p.share || 0), 0);
+// Cuántas veces se usa cada elemento (para mostrarlo y para no borrar lo que está en uso)
+function catUse(k, it) {
+  if (k === "categories") return DB.products.filter(p => p.cat === it).length;
+  if (k === "brands") return DB.products.filter(p => p.brand === it).length;
+  if (k === "expenseCats") return DB.expenses.filter(e => e.cat === it).length;
+  if (k === "payMethods") return DB.sales.filter(s => s.pay === it).length;
+  if (k === "partners") return DB.products.filter(p => p.partner === it.id).length;
+  return 0;
 }
-
+function tileInfo(k) {
+  const st = DB.settings;
+  if (k === "tienda") return { sub: `${esc(st.store)} · ${esc(st.currency)}`, chips: [`Stock bajo ≤ ${st.lowStock}`, `Margen mín. ${st.minMargin} %`, `WhatsApp +${esc(st.waCountry)}`] };
+  if (k === "recibo") return { sub: `Rollo de ${st.paper === "58" ? 58 : 80} mm · ${st.rcLogo ? "con logo" : "sin logo"}`, chips: [st.rcAddress ? "Dirección ✓" : "Sin dirección", st.rcPhone ? "Teléfono ✓" : "Sin teléfono", st.rcRuc ? "RUC ✓" : "Sin RUC"] };
+  if (k === "partners") return { n: DB.partners.length, sub: shareSum() !== 100 ? `<span class="ct-warn">Los % de gastos suman ${shareSum()} %</span>` : plural(DB.partners.length, CAT[k].noun), chips: DB.partners.map(p => `${pDot(p.id)}${esc(p.name)}`) };
+  if (k === "discountCodes") { const act = DB.discountCodes.filter(d => d.active && d.uses < d.maxUses); return { n: act.length, sub: plural(act.length, CAT[k].noun), chips: act.map(d => `${esc(d.code)} · ${d.pct} %`) }; }
+  return { n: DB[k].length, sub: plural(DB[k].length, CAT[k].noun), chips: DB[k].map(esc) };
+}
+function catView() {
+  const tile = (k) => {
+    const c = CAT[k], i = tileInfo(k), chips = i.chips || [], more = chips.length - 4;
+    return `<button class="cat-tile ${c.tone}" data-cattile="${k}">
+      <span class="ct-top"><span class="ct-ico">${LI(c.icon)}</span>${i.n != null ? `<span class="ct-n">${i.n}</span>` : ""}</span>
+      <span class="ct-title">${c.title}</span><span class="ct-sub">${i.sub}</span>
+      <span class="ct-chips">${chips.slice(0, 4).map(x => `<span class="ct-chip">${x}</span>`).join("")}${more > 0 ? `<span class="ct-chip more">+${more}</span>` : ""}</span>
+      <span class="ct-go">${can("canEditCatalog") ? "Ver y editar" : "Ver"} ${LI("chevron-right")}</span></button>`;
+  };
+  return topbar("Catálogos", "Listas y ajustes que usa toda la app", me.role === "propietaria" && !CLOUD ? `<button class="btn ghost" data-act="reset" title="Vuelve a los datos de ejemplo">Reiniciar demo</button>` : "") + `
+  <div class="content">
+    <div class="section-title">Tienda</div>
+    <div class="cat-grid">${["tienda", "recibo", "partners", "discountCodes"].map(tile).join("")}</div>
+    <div class="section-title">Listas</div>
+    <div class="cat-grid">${["categories", "brands", "payMethods", "expenseCats"].map(tile).join("")}</div>
+  </div>`;
+}
+const catHead = (k, extra = "") => `<div class="modal-h"><div class="mh-t"><span class="ct-ico sm ${CAT[k].tone}">${LI(CAT[k].icon)}</span><div><h3>${CAT[k].title}</h3>${extra}</div></div><button class="btn icon ghost" data-close>${I.x}</button></div>`;
+function openCat(k) {
+  if (k === "tienda") return settingsModal("tienda");
+  if (k === "recibo") return settingsModal("recibo");
+  const ed = can("canEditCatalog");
+  const items = k === "partners" ? DB.partners : DB[k];
+  const btns = (i, canDel, why) => ed ? `<span class="cl-act"><button class="btn icon ghost sm" data-catedit="${k}|${i}" title="Editar" aria-label="Editar">${LI("pencil")}</button><button class="btn icon ghost sm danger" data-catdel="${k}|${i}" title="${canDel ? "Eliminar" : esc(why)}" aria-label="Eliminar" ${canDel ? "" : "disabled"}>${LI("trash-2")}</button></span>` : "";
+  const row = (it, i) => {
+    if (k === "partners") { const n = catUse(k, it); return `<div class="cl-row">${pDot(it.id)}<span class="cl-main"><b>${esc(it.name)}</b><span>${plural(n, ["producto", "productos"])} · asume ${it.share} % de gastos compartidos</span></span>${btns(i, n === 0 && DB.partners.length > 1, n ? "Tiene productos asignados" : "Tiene que quedar al menos un socio")}</div>`; }
+    if (k === "discountCodes") { const ok = it.active && it.uses < it.maxUses; return `<div class="cl-row"><span class="cl-badge">${it.pct}%</span><span class="cl-main"><b>${esc(it.code)}</b><span>${it.uses} de ${it.maxUses} usos</span></span><span class="chip ${ok ? "green" : "red"}">${ok ? "Activo" : "Agotado"}</span>${btns(i, true)}</div>`; }
+    const n = catUse(k, it), what = k === "expenseCats" ? ["gasto", "gastos"] : k === "payMethods" ? ["venta", "ventas"] : ["producto", "productos"];
+    return `<div class="cl-row"><span class="cl-main"><b>${esc(it)}</b><span>${n ? plural(n, what) : "Sin uso todavía"}</span></span>${btns(i, true)}</div>`;
+  };
+  modal(`${catHead(k, `<div class="hint">${tileInfo(k).sub}</div>`)}
+    ${ed ? `<button class="btn dark block" data-catadd="${k}">${LI("plus")} Agregar ${k === "partners" ? "socio" : k === "discountCodes" ? "código" : CAT[k].one}</button>` : ""}
+    <div class="cat-list">${items.map(row).join("") || `<div class="empty">Todavía no hay nada aquí</div>`}</div>
+    ${k === "partners" && shareSum() !== 100 ? `<div class="err">Los % de gastos compartidos suman ${shareSum()} %; deberían sumar 100 %.</div>` : ""}`);
+}
+// Después de guardar, vuelve a la lista
+const backTo = (k) => (ok) => { if (ok !== false) setTimeout(() => openCat(k), 0); return ok; };
+function catItemModal(k, i) {
+  if (k === "partners") return partnerModal(i == null ? null : DB.partners[i].id);
+  if (k === "discountCodes") return codeEditModal(i);
+  const old = i == null ? null : DB[k][i];
+  modal(`${catHead(k)}<form id="f" class="form">
+    <div class="field full"><label>${old ? "Nombre" : "Nombre de la nueva " + CAT[k].one}</label><input name="v" required value="${esc(old || "")}"></div>
+    <button class="btn dark lg full">${old ? "Guardar" : "Agregar"}</button>
+    <button type="button" class="btn ghost full" data-cattile="${k}">Volver</button></form>`, f => {
+    const v = f.get("v").trim(); if (!v) return false;
+    if (DB[k].some((x, j) => j !== i && x.toLowerCase() === v.toLowerCase())) { toast("Ya existe en la lista", true); return false; }
+    if (CLOUD) return act(() => sbq(old ? sb.from(CAT_TABLE[k]).update({ name: v }).eq("name", old) : sb.from(CAT_TABLE[k]).upsert({ name: v, active: true }, { onConflict: "name" })), old ? "Cambio guardado" : "Agregado").then(backTo(k));
+    if (old) {
+      DB[k][i] = v;
+      if (k === "categories") DB.products.forEach(p => { if (p.cat === old) p.cat = v; });
+      if (k === "brands") DB.products.forEach(p => { if (p.brand === old) p.brand = v; });
+      if (k === "expenseCats") DB.expenses.forEach(e => { if (e.cat === old) e.cat = v; });
+    } else DB[k].push(v);
+    save(); render(); toast(old ? "Cambio guardado" : "Agregado"); openCat(k); return false;
+  });
+}
+function codeEditModal(i) {
+  const d = i == null ? null : DB.discountCodes[i];
+  modal(`${catHead("discountCodes")}<form id="f" class="form">
+    <div class="field"><label>Código</label><input name="code" required style="text-transform:uppercase" value="${esc(d ? d.code : "")}" ${d ? "readonly" : ""} minlength="3" maxlength="30"></div>
+    <div class="field"><label>Porcentaje</label><input name="pct" type="number" min="1" max="90" required value="${d ? d.pct : ""}"></div>
+    <div class="field full"><label>Usos máximos</label><input name="max" type="number" min="1" value="${d ? d.maxUses : 50}"></div>
+    ${d ? `<div class="hint full">Lleva ${d.uses} usos. Para reactivar un código agotado, subí los usos máximos.</div>` : ""}
+    <button class="btn dark lg full">${d ? "Guardar" : "Crear código"}</button>
+    <button type="button" class="btn ghost full" data-cattile="discountCodes">Volver</button></form>`, f => {
+    const code = f.get("code").toUpperCase().trim(), pct = +f.get("pct"), max = +f.get("max");
+    if (!d && DB.discountCodes.some(x => x.code === code)) { toast("Ese código ya existe", true); return false; }
+    if (CLOUD) return act(() => sbq(d ? sb.from("discount_codes").update({ pct, max_uses: max, active: true }).eq("code", code) : sb.from("discount_codes").upsert({ code, pct, max_uses: max, active: true }, { onConflict: "code" })), d ? "Código actualizado" : "Código creado").then(backTo("discountCodes"));
+    if (d) Object.assign(d, { pct, maxUses: max, active: true }); else DB.discountCodes.push({ code, pct, maxUses: max, uses: 0, active: true });
+    save(); render(); toast(d ? "Código actualizado" : "Código creado"); openCat("discountCodes"); return false;
+  });
+}
+function catDelete(k, i) {
+  const it = k === "partners" ? DB.partners[i] : DB[k][i];
+  const label = k === "partners" ? it.name : k === "discountCodes" ? it.code : it;
+  if (!confirm(`¿Eliminar "${label}"?`)) return;
+  if (CLOUD) {
+    const q = k === "partners" ? sb.from("partners").update({ active: false }).eq("id", it.id)
+      : k === "discountCodes" ? sb.from("discount_codes").update({ active: false }).eq("code", it.code)
+      : sb.from(CAT_TABLE[k]).update({ active: false }).eq("name", it);
+    if (k === "partners" && S.partner === it.id) S.partner = "all";
+    return act(() => sbq(q), "Eliminado").then(backTo(k));
+  }
+  if (k === "partners") { DB.partners.splice(i, 1); if (S.partner === it.id) S.partner = "all"; } else DB[k].splice(i, 1);
+  save(); render(); toast("Eliminado"); openCat(k);
+}
+function settingsModal(part) {
+  const st = DB.settings, ed = can("canEditCatalog");
+  const body = part === "tienda" ? `
+      <div class="field full"><label>Nombre de la tienda</label><input name="store" value="${esc(st.store)}" required></div>
+      <div class="field"><label>Moneda</label><input name="currency" value="${esc(st.currency)}" maxlength="3" required></div>
+      <div class="field"><label>Código de país (WhatsApp)</label><input name="waCountry" inputmode="numeric" value="${esc(st.waCountry)}"></div>
+      <div class="field"><label>Alerta de stock bajo (≤)</label><input name="lowStock" type="number" min="0" value="${st.lowStock}"></div>
+      <div class="field"><label>Margen mínimo sobre costo (%)</label><input name="minMargin" type="number" min="0" value="${st.minMargin}"></div>
+      <div class="hint full">El margen mínimo impide descuentos que dejen una prenda por debajo de su costo más ese porcentaje.</div>
+      ${CLOUD ? "" : `<div class="field full"><label>Servidor del escáner celular</label><input name="relay" value="${esc(st.relay)}"></div>`}`
+    : `
+      <div class="field"><label>Ancho del rollo</label><select name="paper"><option value="80" ${st.paper !== "58" ? "selected" : ""}>80 mm (estándar)</option><option value="58" ${st.paper === "58" ? "selected" : ""}>58 mm (pequeña)</option></select></div>
+      <div class="field"><label>Logo en el recibo</label><select name="rcLogo"><option value="1" ${st.rcLogo ? "selected" : ""}>Sí</option><option value="0" ${!st.rcLogo ? "selected" : ""}>No</option></select></div>
+      <div class="field full"><label>Dirección</label><input name="rcAddress" value="${esc(st.rcAddress)}" placeholder="Ej. Del parque central 1c al sur, Managua"></div>
+      <div class="field"><label>Teléfono</label><input name="rcPhone" value="${esc(st.rcPhone)}" inputmode="tel"></div>
+      <div class="field"><label>RUC (opcional)</label><input name="rcRuc" value="${esc(st.rcRuc)}"></div>
+      <div class="field full"><label>Mensaje al pie</label><textarea name="rcFooter" rows="3">${esc(st.rcFooter)}</textarea></div>`;
+  modal(`${catHead(part)}<form id="f" class="form"><fieldset class="form-fs" ${ed ? "" : "disabled"}>${body}</fieldset>
+    ${ed ? `<button class="btn dark lg full">Guardar</button>` : `<div class="hint full">Tu rol puede ver estos ajustes pero no cambiarlos.</div>`}</form>`, f => {
+    const v = part === "tienda"
+      ? { store: f.get("store").trim(), currency: f.get("currency").trim(), lowStock: +f.get("lowStock"), minMargin: +f.get("minMargin"), waCountry: String(f.get("waCountry")).replace(/\D/g, ""), relay: (f.get("relay") || "").trim() || DEFAULT_RELAY }
+      : { paper: f.get("paper"), rcLogo: f.get("rcLogo") === "1", rcAddress: f.get("rcAddress").trim(), rcPhone: f.get("rcPhone").trim(), rcRuc: f.get("rcRuc").trim(), rcFooter: f.get("rcFooter").trim() };
+    if (CLOUD) {
+      const row = part === "tienda" ? { store: v.store, currency: v.currency, low_stock: v.lowStock, min_margin: v.minMargin, wa_country: v.waCountry }
+        : { paper: v.paper, rc_logo: v.rcLogo, rc_address: v.rcAddress, rc_phone: v.rcPhone, rc_ruc: v.rcRuc, rc_footer: v.rcFooter };
+      return act(() => sbq(sb.from("settings").update({ ...row, updated_at: new Date().toISOString() }).eq("id", 1)), "Ajustes guardados");
+    }
+    Object.assign(DB.settings, v); if (part === "tienda") { stopScanner(); listenScanner(); }
+    save(); render(); toast("Ajustes guardados");
+  });
+}
 function partnerModal(id) {
   const p = id ? partnerById(id) : { name: "", share: 0, color: "#4A6FA5" };
-  const np = id ? DB.products.filter(x => x.partner === id).length : 0;
-  modal(`<div class="modal-h"><h3>${id ? "Editar socio" : "Nuevo socio"}</h3><button class="btn icon ghost" data-close>${I.x}</button></div><form id="f" class="form">
+  modal(`${catHead("partners")}<form id="f" class="form">
     <div class="field full"><label>Nombre</label><input name="name" required value="${esc(p.name)}"></div>
     <div class="field"><label>% de gastos compartidos</label><input name="share" type="number" min="0" max="100" value="${+p.share || 0}"></div>
     <div class="field"><label>Color</label><input name="color" type="color" value="${esc(p.color || "#4A6FA5")}" style="padding:4px"></div>
     <button class="btn dark lg full">${id ? "Guardar" : "Crear socio"}</button>
-    ${id && np === 0 && DB.partners.length > 1 ? `<button type="button" class="btn ghost full" data-delpartner="${id}">Eliminar socio</button>` : id ? `<div class="hint full">Tiene ${np} productos asignados; para eliminarlo primero pasá sus productos a otro socio.</div>` : ""}
+    <button type="button" class="btn ghost full" data-cattile="partners">Volver</button>
   </form>`, f => {
     const v = { name: f.get("name").trim(), share: +f.get("share"), color: f.get("color") };
-    if (CLOUD) return act(() => sbq(id ? sb.from("partners").update(v).eq("id", id) : sb.from("partners").insert(v)), id ? "Socio actualizado" : "Socio creado");
+    if (CLOUD) return act(() => sbq(id ? sb.from("partners").update(v).eq("id", id) : sb.from("partners").insert(v)), id ? "Socio actualizado" : "Socio creado").then(backTo("partners"));
     if (id) Object.assign(DB.partners.find(x => x.id === id), v); else DB.partners.push({ id: "s" + uid(), ...v });
-    save(); render(); toast(id ? "Socio actualizado" : "Socio creado");
+    save(); render(); toast(id ? "Socio actualizado" : "Socio creado"); openCat("partners"); return false;
   });
 }
 
@@ -1295,14 +1403,11 @@ function bind() {
   const posQ = $("#posQ"); if (posQ) posQ.oninput = (e) => { S.q = e.target.value; const pos = e.target.selectionStart; render(); const n = $("#posQ"); n.focus(); n.setSelectionRange(pos, pos); };
   const invQ = $("#invQ"); if (invQ) invQ.oninput = (e) => { S.invQ = e.target.value; const pos = e.target.selectionStart; render(); const n = $("#invQ"); n.focus(); n.setSelectionRange(pos, pos); };
   const sim = $("#simToggle"); if (sim) sim.onchange = (e) => { S.sim = e.target.checked; toast(S.sim ? "Simulando ventas de otros dispositivos…" : "Simulación detenida"); };
-  const sf = $("#settingsForm"); if (sf) sf.onsubmit = (e) => { e.preventDefault(); const f = new FormData(sf);
-    if (CLOUD) return act(() => sbq(sb.from("settings").update({ store: f.get("store").trim(), currency: f.get("currency").trim(), low_stock: +f.get("lowStock"), min_margin: +f.get("minMargin"), wa_country: f.get("waCountry").replace(/\D/g, ""),
-      paper: f.get("paper"), rc_logo: f.get("rcLogo") === "1", rc_address: f.get("rcAddress").trim(), rc_phone: f.get("rcPhone").trim(), rc_ruc: f.get("rcRuc").trim(), rc_footer: f.get("rcFooter").trim(), updated_at: new Date().toISOString() }).eq("id", 1)), "Ajustes guardados"); Object.assign(DB.settings, { paper: f.get("paper"), rcLogo: f.get("rcLogo") === "1", rcAddress: f.get("rcAddress").trim(), rcPhone: f.get("rcPhone").trim(), rcRuc: f.get("rcRuc").trim(), rcFooter: f.get("rcFooter").trim() }); Object.assign(DB.settings, { store: f.get("store"), currency: f.get("currency"), lowStock: +f.get("lowStock"), minMargin: +f.get("minMargin"), waCountry: f.get("waCountry").replace(/\D/g, ""), relay: f.get("relay").trim() || DEFAULT_RELAY }); stopScanner(); listenScanner(); save(); render(); toast("Ajustes guardados"); };
   app.querySelectorAll("[data-perm]").forEach(i => i.onchange = (e) => { const [k, key] = e.target.dataset.perm.split("|"); setPerm(k, key, e.target.checked); });
   app.querySelectorAll("[data-role]").forEach(s => s.onchange = (e) => { if (CLOUD) return act(() => sbq(sb.from("profiles").update({ role: e.target.value }).eq("id", e.target.dataset.role)), "Rol actualizado"); userById(e.target.dataset.role).role = e.target.value; save(); render(); toast("Rol actualizado"); });
 }
 document.addEventListener("click", (e) => {
-  const t = e.target.closest("[data-act],[data-add],[data-qty],[data-disc],[data-pay],[data-inv],[data-rep],[data-reptab],[data-photo],[data-addcat],[data-delcat],[data-lim],[data-toggle],[data-partner],[data-editpartner],[data-delpartner],[data-assign],[data-editprod],[data-sale-detail],[data-spk],[data-setpin],[data-edituser],[data-close]");
+  const t = e.target.closest("[data-act],[data-add],[data-qty],[data-disc],[data-pay],[data-inv],[data-rep],[data-reptab],[data-photo],[data-lim],[data-toggle],[data-partner],[data-assign],[data-editprod],[data-sale-detail],[data-spk],[data-setpin],[data-edituser],[data-cattile],[data-catadd],[data-catedit],[data-catdel],[data-close]");
   if (!t) { if (e.target.classList.contains("overlay")) { closeModal(); if (S.cartOpen) render(); } return; }
   if (t.dataset.close != null) { if (t.closest(".cart-screen")) S.cartOpen = false; closeModal(); if (S.cartOpen) render(); return; }
   if (t.dataset.editprod) return editProdModal(t.dataset.editprod);
@@ -1311,9 +1416,10 @@ document.addEventListener("click", (e) => {
   if (t.dataset.saleDetail) return saleDetailModal(t.dataset.saleDetail);
   if (t.dataset.spk) { S.spk = +t.dataset.spk; try { localStorage.setItem("aris-spk", S.spk); } catch {} return render(); }
   if (t.dataset.partner) { S.partner = t.dataset.partner; return render(); }
-  if (t.dataset.editpartner) return partnerModal(t.dataset.editpartner);
-  if (t.dataset.delpartner && CLOUD) { const id = t.dataset.delpartner; if (S.partner === id) S.partner = "all"; return act(() => sbq(sb.from("partners").update({ active: false }).eq("id", id)), "Socio eliminado").then(ok => ok && closeModal()); }
-  if (t.dataset.delpartner) { DB.partners = DB.partners.filter(p => p.id !== t.dataset.delpartner); if (S.partner === t.dataset.delpartner) S.partner = "all"; save(); closeModal(); return render(); }
+  if (t.dataset.cattile) return openCat(t.dataset.cattile);
+  if (t.dataset.catadd) return catItemModal(t.dataset.catadd, null);
+  if (t.dataset.catedit) { const [k, i] = t.dataset.catedit.split("|"); return catItemModal(k, +i); }
+  if (t.dataset.catdel) { const [k, i] = t.dataset.catdel.split("|"); return catDelete(k, +i); }
   if (t.dataset.add) return addToCart(t.dataset.add);
   if (t.dataset.qty) { const [v, d] = t.dataset.qty.split("|"); return setQty(v, +d); }
   if (t.dataset.disc) return applyManual(+t.dataset.disc);
@@ -1321,10 +1427,6 @@ document.addEventListener("click", (e) => {
   if (t.dataset.inv) { S.invFilter = t.dataset.inv; return render(); }
   if (t.dataset.rep) { S.repRange = t.dataset.rep; return render(); }
   if (t.dataset.reptab) { S.repTab = t.dataset.reptab; return render(); }
-  if (t.dataset.addcat) return addCatModal(t.dataset.addcat);
-  if (t.dataset.delcat && CLOUD) { const [k, i] = t.dataset.delcat.split("|"), it = DB[k][+i]; if (!confirm(`¿Quitar "${k === "discountCodes" ? it.code : it}" de la lista?`)) return;
-    return act(() => sbq(k === "discountCodes" ? sb.from("discount_codes").update({ active: false }).eq("code", it.code) : sb.from(CAT_TABLE[k]).update({ active: false }).eq("name", it)), "Quitado de la lista"); }
-  if (t.dataset.delcat) { const [k, i] = t.dataset.delcat.split("|"); DB[k].splice(+i, 1); save(); return render(); }
   if (t.dataset.lim) { if (me.role !== "propietaria") return; const [k, d] = t.dataset.lim.split("|"); if (k === "propietaria") return; DB.roles[k].maxDisc = Math.min(100, Math.max(0, DB.roles[k].maxDisc + +d));
     if (CLOUD) return saveRole(k); save(); return render(); }
   if (t.dataset.photo) { const inp = document.createElement("input"); inp.type = "file"; inp.accept = "image/*"; inp.onchange = async () => { const f = inp.files[0]; if (!f) return;
@@ -1346,7 +1448,6 @@ document.addEventListener("click", (e) => {
   else if (a === "void") voidModal(t.dataset.sale);
   else if (a === "reticket") { const x = DB.sales.find(s => s.id === t.dataset.sale); if (x) showTicket(x); }
   else if (a === "share") shareTicket(t.dataset.sale);
-  else if (a === "newpartner") partnerModal();
   else if (a === "delprod" && CLOUD) { if (confirm("¿Eliminar este producto?")) act(() => sbq(sb.from("products").update({ active: false }).eq("id", t.dataset.pid)), "Producto eliminado").then(ok => ok && closeModal()); }
   else if (a === "delprod") { if (confirm("¿Eliminar este producto?")) { DB.products = DB.products.filter(x => x.id !== t.dataset.pid); save(); closeModal(); render(); toast("Producto eliminado"); } }
   else if (a === "labels") labelsModal();
