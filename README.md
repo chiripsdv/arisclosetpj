@@ -34,11 +34,11 @@ Todo corre en el navegador y los datos se guardan localmente en cada dispositivo
 - En el teléfono: abrir el link en Chrome o Safari → menú → **"Agregar a pantalla de inicio"**. Queda instalada como app.
 - En el **Panel**, el interruptor *"Simular ventas de otros dispositivos"* genera ventas cada pocos segundos para mostrar cómo se actualiza en vivo.
 - Si abrís la app en dos pestañas del mismo navegador, una venta en una se refleja en la otra al instante.
-- **Catálogos → Reiniciar demo** vuelve a los datos de ejemplo.
+- **Configuración → Reiniciar demo** vuelve a los datos de ejemplo.
 
 ## Novedades: socios, escáner con celular y WhatsApp
 
-**Socios.** Catálogos → Socios: nombre, color y % de gastos compartidos. Cada producto tiene un socio dueño; las entradas de mercadería piden el socio; los gastos pueden ser de un socio o compartidos. Panel, inventario, gastos y reportes tienen el selector *Consolidado / socio*, y Reportes → **Socios** muestra la liquidación (venta neta, costo, utilidad, gastos propios y compartidos). Si un ticket tiene prendas de ambos socios, se reparte y el descuento se prorratea.
+**Socios.** Configuración → Socios: nombre, color y % de gastos compartidos. Cada producto tiene un socio dueño; las entradas de mercadería piden el socio; los gastos pueden ser de un socio o compartidos. Panel, inventario, gastos y reportes tienen el selector *Consolidado / socio*, y Reportes → **Socios** muestra la liquidación (venta neta, costo, utilidad, gastos propios y compartidos). Si un ticket tiene prendas de ambos socios, se reparte y el descuento se prorratea.
 
 **Escáner con el celular para vender en la computadora.**
 1. Inventario → **Etiquetas**: imprimí las etiquetas con código de barras y pegalas en las prendas (o asigná el código de fábrica la primera vez que se escanea).

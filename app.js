@@ -267,7 +267,7 @@ const I = {
   inventario: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 7.3L12 3 3.5 7.3v9.4L12 21l8.5-4.3z"/><path d="M3.5 7.3L12 11.6l8.5-4.3"/><path d="M12 11.6V21"/></svg>',
   gastos: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="3"/><path d="M2 10h20"/><path d="M6 15h4"/></svg>',
   reportes: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 3 5-6"/></svg>',
-  catalogos: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 13.4L13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg>',
+  catalogos: '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/><circle cx="12" cy="12" r="3"/></svg>',
   usuarios: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.9"/><path d="M16 3.1a4 4 0 0 1 0 7.8"/></svg>',
   search: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#7A7A76" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>',
   plus: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
@@ -294,7 +294,7 @@ const I = {
   wa: '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm0 18.2a8.2 8.2 0 0 1-4.2-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8s-.4-.1-.6.1-.6.8-.8 1-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.3-.4.2-.4.7-1.3.1-.2 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-.9 2.2 5.2 5.2 0 0 0 1.1 2.8 12 12 0 0 0 4.6 4.1c1.7.7 2.4.8 3.2.7a2.8 2.8 0 0 0 1.8-1.3 2.2 2.2 0 0 0 .2-1.3c-.1-.1-.3-.2-.5-.3z"/></svg>'
 };
 const NAV_KEYS = ["panel", "venta", "inventario", "gastos", "reportes", "catalogos", "usuarios"];
-const NAV = [["panel","Panel"],["venta","Vender"],["inventario","Inventario"],["gastos","Gastos"],["reportes","Reportes"],["catalogos","Catálogos"],["usuarios","Usuarios"]];
+const NAV = [["panel","Panel"],["venta","Vender"],["inventario","Inventario"],["gastos","Gastos"],["reportes","Reportes"],["catalogos","Configuración"],["usuarios","Usuarios"]];
 
 /* ---------- Render raíz ---------- */
 const app = $("#app");
@@ -1011,7 +1011,7 @@ function repView() {
     body = `<section class="kpis" style="grid-template-columns:repeat(${Math.min(4, rows.length)},minmax(0,1fr))">${rows.map(r => `<div class="card kpi"><div class="lbl"><span class="who">${pDot(r.p.id)}${esc(r.p.name)}</span><span class="chip">${tot("net") ? (r.net / tot("net") * 100).toFixed(0) : 0} %</span></div><div class="val">${money(r.net)}</div><div class="foot">${r.q} piezas · ${r.n} tickets${P ? ` · utilidad <b style="color:${r.util >= 0 ? "var(--green)" : "var(--red)"}">${money(r.util)}</b>` : ""}</div></div>`).join("")}</section>
     <section class="card"><div class="card-h"><h2>Liquidación por socio</h2><span class="hint">${days.length === 1 ? "hoy" : "últimos " + days.length + " días"}</span></div>${tbl(`<th>Socio</th><th class="r">Tickets</th><th class="r">Piezas</th><th class="r">Bruto</th><th class="r">Desc.</th><th class="r">Venta neta</th>${P ? `<th class="r">Costo</th><th class="r">Util. bruta</th><th class="r">Gastos propios</th><th class="r">Gastos compartidos</th><th class="r">Utilidad neta</th><th class="r">Inventario al costo</th>` : ""}`,
       rows.map(r => `<tr><td><span class="who">${pDot(r.p.id)}<b>${esc(r.p.name)}</b></span></td><td class="r">${r.n}</td><td class="r">${r.q}</td><td class="r">${money(r.gross)}</td><td class="r" style="color:var(--red)">${r.disc ? "− " + money(r.disc) : "—"}</td><td class="r"><b>${money(r.net)}</b></td>${P ? `<td class="r">${money(r.c)}</td><td class="r">${money(r.net - r.c)}</td><td class="r">${money(r.own)}</td><td class="r">${money(r.shared)} <span class="hint">${r.p.share} %</span></td><td class="r"><b style="color:${r.util >= 0 ? "var(--green)" : "var(--red)"}">${money(r.util)}</b></td><td class="r">${money(r.stockC)}</td>` : ""}</tr>`).concat([`<tr class="tot"><td><b>Consolidado</b></td><td class="r">${all.length}</td><td class="r">${tot("q")}</td><td class="r">${money(tot("gross"))}</td><td class="r" style="color:var(--red)">− ${money(tot("disc"))}</td><td class="r"><b>${money(tot("net"))}</b></td>${P ? `<td class="r">${money(tot("c"))}</td><td class="r">${money(tot("net") - tot("c"))}</td><td class="r">${money(tot("own"))}</td><td class="r">${money(tot("shared"))}</td><td class="r"><b>${money(tot("util"))}</b></td><td class="r">${money(tot("stockC"))}</td>` : ""}</tr>`]))}
-      <div class="card-b hint">La <b>venta neta</b> es lo cobrado por la mercadería de cada socio (si un ticket tiene prendas de ambos, se reparte y el descuento se prorratea). Los gastos compartidos se reparten según el % de cada socio, configurable en Catálogos → Socios.</div></section>`;
+      <div class="card-b hint">La <b>venta neta</b> es lo cobrado por la mercadería de cada socio (si un ticket tiene prendas de ambos, se reparte y el descuento se prorratea). Los gastos compartidos se reparten según el % de cada socio, configurable en Configuración → Socios.</div></section>`;
   } else if (tab === "producto") {
     const g = D.group(l => l.name); const gv = D.group(l => `${l.name} · ${l.size} ${l.color}`);
     body = `<section class="card"><div class="card-h"><h2>Ventas por producto</h2><span class="hint">${g.length} productos</span></div>${tbl(`<th>Producto</th><th class="r">Uds.</th><th class="r">Tickets</th><th class="r">Bruto</th><th class="r">Desc.</th><th class="r">Neto</th>${P ? `<th class="r">Costo</th>` : ""}${mhead}`, g.map(x => `<tr><td><b>${esc(x.k)}</b></td><td class="r">${x.q}</td><td class="r">${x.n}</td><td class="r">${money(x.gross)}</td><td class="r" style="color:var(--red)">${x.disc ? "− " + money(x.disc) : "—"}</td><td class="r"><b>${money(x.net)}</b></td>${P ? `<td class="r">${money(x.cost)}</td>` : ""}${mcell(x)}</tr>`))}</section>
@@ -1059,8 +1059,7 @@ function exportCSV() {
   const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob(["﻿" + csv], { type: "text/csv" })); a.download = `ventas-${S.partner === "all" ? "consolidado" : partnerById(S.partner).name.replace(/\W+/g, "-").toLowerCase()}-${S.repRange}.csv`; a.click();
 }
 
-/* ---------- Catálogos ---------- */
-/* ---------- Catálogos: tarjetas que abren su detalle ---------- */
+/* ---------- Configuración: tarjetas que abren su detalle ---------- */
 // Íconos de la librería Lucide (licencia ISC, vendor/lucide.js)
 const LI = (n, cls = "") => ((window.LUCIDE && window.LUCIDE[n]) || "").replace("<svg", `<svg class="li ${cls}" aria-hidden="true"`);
 const CAT_TABLE = { categories: "categories", brands: "brands", payMethods: "payment_methods", expenseCats: "expense_categories" };
@@ -1102,7 +1101,7 @@ function catView() {
       <span class="ct-chips">${chips.slice(0, 4).map(x => `<span class="ct-chip">${x}</span>`).join("")}${more > 0 ? `<span class="ct-chip more">+${more}</span>` : ""}</span>
       <span class="ct-go">${can("canEditCatalog") ? "Ver y editar" : "Ver"} ${LI("chevron-right")}</span></button>`;
   };
-  return topbar("Catálogos", "Listas y ajustes que usa toda la app", me.role === "propietaria" && !CLOUD ? `<button class="btn ghost" data-act="reset" title="Vuelve a los datos de ejemplo">Reiniciar demo</button>` : "") + `
+  return topbar("Configuración", "Ajustes de la tienda y listas que usa toda la app", me.role === "propietaria" && !CLOUD ? `<button class="btn ghost" data-act="reset" title="Vuelve a los datos de ejemplo">Reiniciar demo</button>` : "") + `
   <div class="content">
     <div class="section-title">Tienda</div>
     <div class="cat-grid">${["tienda", "recibo", "partners", "discountCodes"].map(tile).join("")}</div>
@@ -1247,7 +1246,7 @@ const PERMS = [
   ["Inventario (stock)", "v:inventario"],
   ["Gastos", "v:gastos"],
   ["Reportes", "v:reportes"],
-  ["Catálogos y ajustes", "v:catalogos"],
+  ["Configuración", "v:catalogos"],
   ["Información", null],
   ["Ver las ventas de todos", "seeAllSales", "Si está apagado, solo ve sus propias ventas."],
   ["Ver costos de los productos", "canSeeCost"],
