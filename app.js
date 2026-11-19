@@ -85,7 +85,7 @@ function login(u) { me = u; sessionStorage.setItem(SESSION, u.id); location.hash
 function logout() { me = null; sessionStorage.removeItem(SESSION); stopScanner(); location.hash = ""; render(); }
 
 /* ---------- Estado UI ---------- */
-const S = { sb: (() => { try { return localStorage.getItem("aris-sb") === "1"; } catch { return false; } })(), cart: [], disc: null, pay: "Efectivo", q: "", invFilter: "Todo", invQ: "", repRange: "hoy", sim: false, custom: false, partner: "all" };
+const S = { spk: (() => { try { return +localStorage.getItem("aris-spk") === 30 ? 30 : 7; } catch { return 7; } })(), sb: (() => { try { return localStorage.getItem("aris-sb") === "1"; } catch { return false; } })(), cart: [], disc: null, pay: "Efectivo", q: "", invFilter: "Todo", invQ: "", repRange: "hoy", sim: false, custom: false, partner: "all" };
 const prodById = (id) => DB.products.find(p => p.id === id);
 const varById = (id) => { for (const p of DB.products) { const v = p.variants.find(v => v.id === id); if (v) return { p, v }; } return null; };
 const userById = (id) => DB.users.find(u => u.id === id) || { name: "—" };
@@ -246,7 +246,7 @@ function bindLogin() {
 function panelView() {
   if (!can("seeAllSales")) return myPanelView();
   const t = today(), s = scoped(salesOf(t));
-  const W = last7().map(d => { const ds = scoped(salesOf(d)); return { total: ds.reduce((a, x) => a + x.total, 0), n: ds.length, disc: ds.reduce((a, x) => a + (x.discount ? x.discount.amount : 0), 0), cost: ds.reduce((a, x) => a + x.items.reduce((b, i) => b + i.cost * i.qty, 0), 0), units: ds.reduce((a, x) => a + x.items.reduce((b, i) => b + i.qty, 0), 0), exp: scopedExp(DB.expenses.filter(e => e.day === d)).reduce((a, e) => a + e.amount, 0) }; });
+  const WD = lastN(S.spk), W = WD.map(d => { const ds = scoped(salesOf(d)); return { total: ds.reduce((a, x) => a + x.total, 0), n: ds.length, disc: ds.reduce((a, x) => a + (x.discount ? x.discount.amount : 0), 0), cost: ds.reduce((a, x) => a + x.items.reduce((b, i) => b + i.cost * i.qty, 0), 0), units: ds.reduce((a, x) => a + x.items.reduce((b, i) => b + i.qty, 0), 0), exp: scopedExp(DB.expenses.filter(e => e.day === d)).reduce((a, e) => a + e.amount, 0) }; });
   const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 7);
   const lastWeek = scoped(salesOf(dayOf(yesterday))).reduce((a, x) => a + x.total, 0);
   const total = s.reduce((a, x) => a + x.total, 0), disc = s.reduce((a, x) => a + (x.discount ? x.discount.amount : 0), 0);
@@ -265,13 +265,13 @@ function panelView() {
     ${!mine ? `<label class="toggle hide-m" title="Genera una venta de otro dispositivo cada pocos segundos"><input type="checkbox" id="simToggle" ${S.sim ? "checked" : ""}> <span class="tl-long">Simular ventas de otros dispositivos</span><span class="tl-short">Simular</span></label>` : ""}
     <a href="#venta" class="btn red">${I.plus}<span class="hide-m">Nueva venta</span></a>`) + `
   <div class="content">
-    ${partnerSeg()}
+    <div class="panel-tools">${partnerSeg()}${spkRangeSeg()}</div>
     <section class="kpis">
-      <div class="card kpi hero k1"><div class="lbl">Ventas de hoy<span class="ico">${I.trend}</span></div><div class="val">${money(total)}</div><div class="foot">${lastWeek ? `${deltaChip(total, lastWeek)} vs. hace una semana` : "Sin referencia semanal"}</div>${spark(W.map(d => d.total))}</div>
-      <div class="card kpi k2"><div class="lbl">Tickets<span class="ico">${I.ticket}</span></div><div class="val">${s.length}</div><div class="foot">${deltaChip(s.length, W[0].n)} Promedio ${money(s.length ? total / s.length : 0)}</div>${spark(W.map(d => d.n))}</div>
-      <div class="card kpi k3"><div class="lbl">Descuentos<span class="ico">${I.disc}</span></div><div class="val red">${money(disc)}</div><div class="foot">${s.filter(x => x.discount).length} ventas · ${total ? (disc / (total + disc) * 100).toFixed(1) : 0} %</div>${spark(W.map(d => d.disc))}</div>
-      ${can("canSeeProfit") ? `<div class="card kpi k4"><div class="lbl">Utilidad estimada<span class="ico">${I.cash}</span></div><div class="val">${money(total - cost - exp)}</div><div class="foot">Margen ${total ? Math.round((total - cost) / total * 100) : 0} % · gastos ${money(exp)}</div>${spark(W.map(d => d.total - d.cost - d.exp))}</div>`
-        : `<div class="card kpi k4"><div class="lbl">Artículos vendidos<span class="ico">${I.inventario}</span></div><div class="val">${s.reduce((a, x) => a + x.items.reduce((b, i) => b + i.qty, 0), 0)}</div><div class="foot">${lowStockP().length} variantes en stock bajo</div>${spark(W.map(d => d.units))}</div>`}
+      <div class="card kpi hero k1"><div class="lbl">Ventas de hoy<span class="ico">${I.trend}</span></div><div class="val">${money(total)}</div><div class="foot">${lastWeek ? `${deltaChip(total, lastWeek)} vs. hace una semana` : "Sin referencia semanal"}</div>${spark(W.map(d => d.total), WD)}</div>
+      <div class="card kpi k2"><div class="lbl">Tickets<span class="ico">${I.ticket}</span></div><div class="val">${s.length}</div><div class="foot">${deltaChip(s.length, W[0].n)} Promedio ${money(s.length ? total / s.length : 0)}</div>${spark(W.map(d => d.n), WD, "int")}</div>
+      <div class="card kpi k3"><div class="lbl">Descuentos<span class="ico">${I.disc}</span></div><div class="val red">${money(disc)}</div><div class="foot">${s.filter(x => x.discount).length} ventas · ${total ? (disc / (total + disc) * 100).toFixed(1) : 0} %</div>${spark(W.map(d => d.disc), WD)}</div>
+      ${can("canSeeProfit") ? `<div class="card kpi k4"><div class="lbl">Utilidad estimada<span class="ico">${I.cash}</span></div><div class="val">${money(total - cost - exp)}</div><div class="foot">Margen ${total ? Math.round((total - cost) / total * 100) : 0} % · gastos ${money(exp)}</div>${spark(W.map(d => d.total - d.cost - d.exp), WD)}</div>`
+        : `<div class="card kpi k4"><div class="lbl">Artículos vendidos<span class="ico">${I.inventario}</span></div><div class="val">${s.reduce((a, x) => a + x.items.reduce((b, i) => b + i.qty, 0), 0)}</div><div class="foot">${lowStockP().length} variantes en stock bajo</div>${spark(W.map(d => d.units), WD, "int")}</div>`}
     </section>
     <div class="grid-2">
       <section class="card">
@@ -325,24 +325,51 @@ function saleDetailModal(id) {
     ${split.length > 1 ? `<div class="split">${split.map(o => `<span class="who">${pDot(o.p.id)}${esc(o.p.name)} <b>${money(o.v.total)}</b></span>`).join("")}</div>` : ""}
     <div class="ticket-actions"><button class="btn" data-act="print" data-sale="${x.id}">${I.print} Reimprimir</button><button class="btn red" data-act="reticket" data-sale="${x.id}">${I.wa} Enviar ticket</button></div>`);
 }
-// Mini-gráfica de tendencia (últimos 7 días) para las tarjetas
+// Mini-gráfica de tendencia de cada tarjeta: datos reales de los últimos 7 o 30 días.
+// Al pasar el mouse (o el dedo) muestra la fecha y el valor de cada día.
 let _sparkN = 0;
-function spark(vals) {
+function spark(vals, days, kind = "money") {
   const n = vals.length; if (n < 2) return "";
   const max = Math.max(...vals), min = Math.min(...vals, 0), rng = max - min || 1;
   const pts = vals.map((v, i) => [i * 100 / (n - 1), 30 - (v - min) / rng * 25]);
   let d = `M${pts[0][0]},${pts[0][1]}`;
   for (let i = 1; i < n; i++) { const [x0, y0] = pts[i - 1], [x1, y1] = pts[i], cx = (x0 + x1) / 2; d += ` C${cx},${y0} ${cx},${y1} ${x1},${y1}`; }
-  const id = "sg" + (++_sparkN);
-  return `<svg class="spark" viewBox="0 0 100 32" preserveAspectRatio="none" aria-hidden="true"><defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="currentColor" stop-opacity=".28"/><stop offset="1" stop-color="currentColor" stop-opacity="0"/></linearGradient></defs><path d="${d} L100,32 L0,32 Z" fill="url(#${id})"/><path d="${d}" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" vector-effect="non-scaling-stroke"/></svg>`;
+  const id = "sg" + (++_sparkN), lastY = pts[n - 1][1] / 32 * 100;
+  return `<div class="spk" data-vals="${vals.join(",")}" data-days="${(days || []).join(",")}" data-kind="${kind}">
+    <svg class="spark" viewBox="0 0 100 32" preserveAspectRatio="none" aria-hidden="true"><defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="currentColor" stop-opacity=".28"/><stop offset="1" stop-color="currentColor" stop-opacity="0"/></linearGradient></defs><path d="${d} L100,32 L0,32 Z" fill="url(#${id})"/><path d="${d}" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" vector-effect="non-scaling-stroke"/></svg>
+    <i class="spk-today" style="top:${lastY}%"></i><i class="spk-dot"></i><i class="spk-line"></i>
+    <span class="spk-lbl">${n} días</span><span class="spk-tip"></span>
+  </div>`;
 }
-const last7 = () => { const out = []; for (let i = 6; i >= 0; i--) { const d = new Date(); d.setDate(d.getDate() - i); out.push(dayOf(d)); } return out; };
+const lastN = (n) => { const out = []; for (let i = n - 1; i >= 0; i--) { const d = new Date(); d.setDate(d.getDate() - i); out.push(dayOf(d)); } return out; };
+// Interacción de las mini-gráficas
+function spkMove(e) {
+  const box = e.target.closest && e.target.closest(".spk"); if (!box) return;
+  const pt = e.touches ? e.touches[0] : e, r = box.getBoundingClientRect();
+  const vals = box.dataset.vals.split(",").map(Number), days = box.dataset.days.split(","), n = vals.length;
+  const i = Math.max(0, Math.min(n - 1, Math.round((pt.clientX - r.left) / r.width * (n - 1))));
+  const max = Math.max(...vals), min = Math.min(...vals, 0), rng = max - min || 1;
+  const x = i / (n - 1) * 100, y = (30 - (vals[i] - min) / rng * 25) / 32 * 100;
+  const dot = box.querySelector(".spk-dot"), line = box.querySelector(".spk-line"), tip = box.querySelector(".spk-tip");
+  dot.style.left = line.style.left = x + "%"; dot.style.top = y + "%";
+  const dd = days[i] ? new Date(days[i] + "T12:00") : null;
+  const when = i === n - 1 ? "Hoy" : dd ? dd.toLocaleDateString("es", { weekday: "short", day: "numeric", month: "short" }) : "";
+  const v = box.dataset.kind === "money" ? money(vals[i]) : vals[i].toLocaleString("en-US");
+  tip.innerHTML = `<b>${v}</b><span>${when}</span>`;
+  tip.style.left = Math.min(Math.max(x, 18), 82) + "%";
+  box.classList.add("on");
+}
+document.addEventListener("mousemove", (e) => { const on = document.querySelector(".spk.on"); const box = e.target.closest && e.target.closest(".spk"); if (on && on !== box) on.classList.remove("on"); if (box) spkMove(e); });
+document.addEventListener("touchstart", (e) => { document.querySelectorAll(".spk.on").forEach(x => { if (!x.contains(e.target)) x.classList.remove("on"); }); if (e.target.closest && e.target.closest(".spk")) spkMove(e); }, { passive: true });
+document.addEventListener("touchmove", (e) => { if (e.target.closest && e.target.closest(".spk")) spkMove(e); }, { passive: true });
+const spkRangeSeg = () => `<div class="seg spk-seg" role="group" aria-label="Período de las tendencias"><span class="hint">Tendencia</span>${[7, 30].map(n => `<button data-spk="${n}" class="${S.spk === n ? "on" : ""}">${n} días</button>`).join("")}</div>`;
+const last7 = () => lastN(7);
 const deltaChip = (now, before) => { if (!before) return ""; const d = Math.round((now - before) / before * 100); return `<span class="chip ${d >= 0 ? "green" : "red"}">${d >= 0 ? "↑" : "↓"} ${Math.abs(d)} %</span>`; };
 const discChip = (d) => d ? `<span class="chip red">${d.type === "codigo" ? "Código " + esc(d.code) : d.type === "pin" ? d.pct + " % con PIN" : d.pct + " % manual"}</span>` : `<span class="nodisc" style="color:var(--faint)">—</span>`;
 
 // Panel de quien solo ve lo suyo: lo vendido, unidades y stock. Sin costos, márgenes ni caja de la tienda.
 function myPanelView() {
-  const t = today(), mine = (d) => salesOf(d).filter(x => x.seller === me.id);
+  const t = today(), mine = (d) => salesOf(d).filter(x => x.seller === me.id), SD = lastN(S.spk);
   const s = mine(t), units = s.reduce((a, x) => a + x.items.reduce((b, i) => b + i.qty, 0), 0), total = s.reduce((a, x) => a + x.total, 0);
   const week = []; for (let i = 6; i >= 0; i--) { const d = new Date(); d.setDate(d.getDate() - i); week.push(dayOf(d)); }
   const ws = week.map(d => mine(d)), wTotal = ws.flat().reduce((a, x) => a + x.total, 0), wUnits = ws.flat().reduce((a, x) => a + x.items.reduce((b, i) => b + i.qty, 0), 0);
@@ -352,10 +379,11 @@ function myPanelView() {
   const perDay = ws.map(x => x.reduce((a, y) => a + y.items.reduce((b, i) => b + i.qty, 0), 0)), pmax = Math.max(1, ...perDay);
   return topbar(`${greet()}, ${esc(me.name)}`, `Mis ventas · ${fmtDL(new Date())}`, `<a href="#venta" class="btn red">${I.plus}<span class="hide-m">Nueva venta</span></a>`) + `
   <div class="content">
+    <div class="panel-tools">${spkRangeSeg()}</div>
     <section class="kpis">
-      <div class="card kpi hero k1"><div class="lbl">Vendido hoy<span class="ico">${I.trend}</span></div><div class="val">${money(total)}</div><div class="foot">${s.length} ${s.length === 1 ? "venta" : "ventas"}</div>${spark(ws.map(x => x.reduce((a, y) => a + y.total, 0)))}</div>
-      <div class="card kpi k2"><div class="lbl">Unidades hoy<span class="ico">${I.inventario}</span></div><div class="val">${units}</div><div class="foot">${s.length ? (units / s.length).toFixed(1) + " por venta" : "Todavía sin ventas"}</div>${spark(perDay)}</div>
-      <div class="card kpi k3"><div class="lbl">Vendido en 7 días<span class="ico">${I.ticket}</span></div><div class="val">${money(wTotal)}</div><div class="foot">${wUnits} unidades</div>${spark(ws.map(x => x.length))}</div>
+      <div class="card kpi hero k1"><div class="lbl">Vendido hoy<span class="ico">${I.trend}</span></div><div class="val">${money(total)}</div><div class="foot">${s.length} ${s.length === 1 ? "venta" : "ventas"}</div>${spark(SD.map(d => mine(d).reduce((a, y) => a + y.total, 0)), SD)}</div>
+      <div class="card kpi k2"><div class="lbl">Unidades hoy<span class="ico">${I.inventario}</span></div><div class="val">${units}</div><div class="foot">${s.length ? (units / s.length).toFixed(1) + " por venta" : "Todavía sin ventas"}</div>${spark(SD.map(d => mine(d).reduce((a, y) => a + y.items.reduce((b, i) => b + i.qty, 0), 0)), SD, "int")}</div>
+      <div class="card kpi k3"><div class="lbl">Vendido en 7 días<span class="ico">${I.ticket}</span></div><div class="val">${money(wTotal)}</div><div class="foot">${wUnits} unidades</div>${spark(SD.map(d => mine(d).length), SD, "int")}</div>
       <div class="card kpi k4 warn"><div class="lbl">Stock bajo<span class="ico">${I.warn}</span></div><div class="val red">${lowStock().length}</div><div class="foot">variantes por agotarse</div><div class="meter"><i style="width:${Math.min(100, lowStock().length / Math.max(1, DB.products.reduce((a, p) => a + p.variants.length, 0)) * 100)}%"></i></div></div>
     </section>
     <div class="grid-2">
@@ -980,11 +1008,12 @@ function bind() {
   app.querySelectorAll("[data-role]").forEach(s => s.onchange = (e) => { userById(e.target.dataset.role).role = e.target.value; save(); render(); toast("Rol actualizado"); });
 }
 document.addEventListener("click", (e) => {
-  const t = e.target.closest("[data-act],[data-add],[data-qty],[data-disc],[data-pay],[data-inv],[data-rep],[data-reptab],[data-photo],[data-addcat],[data-delcat],[data-lim],[data-toggle],[data-partner],[data-editpartner],[data-delpartner],[data-assign],[data-editprod],[data-sale-detail],[data-close]");
+  const t = e.target.closest("[data-act],[data-add],[data-qty],[data-disc],[data-pay],[data-inv],[data-rep],[data-reptab],[data-photo],[data-addcat],[data-delcat],[data-lim],[data-toggle],[data-partner],[data-editpartner],[data-delpartner],[data-assign],[data-editprod],[data-sale-detail],[data-spk],[data-close]");
   if (!t) { if (e.target.classList.contains("overlay")) { closeModal(); if (S.cartOpen) render(); } return; }
   if (t.dataset.close != null) { if (t.closest(".cart-screen")) S.cartOpen = false; closeModal(); if (S.cartOpen) render(); return; }
   if (t.dataset.editprod) return editProdModal(t.dataset.editprod);
   if (t.dataset.saleDetail) return saleDetailModal(t.dataset.saleDetail);
+  if (t.dataset.spk) { S.spk = +t.dataset.spk; try { localStorage.setItem("aris-spk", S.spk); } catch {} return render(); }
   if (t.dataset.partner) { S.partner = t.dataset.partner; return render(); }
   if (t.dataset.editpartner) return partnerModal(t.dataset.editpartner);
   if (t.dataset.delpartner) { DB.partners = DB.partners.filter(p => p.id !== t.dataset.delpartner); if (S.partner === t.dataset.delpartner) S.partner = "all"; save(); closeModal(); return render(); }
