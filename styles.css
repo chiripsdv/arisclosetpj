@@ -858,3 +858,25 @@ svg.li{width:20px;height:20px;flex-shrink:0;stroke-width:1.9}
 .btn svg.li{width:17px;height:17px}
 .form-fs{border:0;padding:0;margin:0;display:contents}
 @media (max-width:600px){.cat-grid{grid-template-columns:1fr 1fr;gap:10px}.cat-tile{padding:14px 13px 13px;border-radius:16px}.ct-ico{width:40px;height:40px;border-radius:12px}.ct-n{font-size:24px}.ct-title{font-size:14px}.ct-chips{display:none}.ct-go{margin-top:6px}}
+
+/* Login: usuario reconocido al escribir */
+.lg-user{position:relative}
+.lg-user input{width:100%;padding-right:40px}
+.lg-state{position:absolute;right:12px;top:50%;width:18px;height:18px;margin-top:-9px;border-radius:50%;transition:all .2s}
+.lg-state.busy{border:2px solid var(--line);border-top-color:var(--red);animation:spin .8s linear infinite}
+.lg-state.ok{background:var(--green) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E") center/12px no-repeat}
+.lg-state.bad{background:var(--red) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.2' stroke-linecap='round'%3E%3Cpath d='M18 6 6 18M6 6l12 12'/%3E%3C/svg%3E") center/11px no-repeat}
+.lg-state.warn{background:#E8A35C}
+.lg-who{display:none;align-items:center;gap:12px;padding:12px 14px;border-radius:14px;font-size:13px;margin-top:-6px;animation:lgIn .3s cubic-bezier(.2,.8,.2,1)}
+.lg-who.ok,.lg-who.bad,.lg-who.warn{display:flex}
+.lg-who.ok{background:linear-gradient(135deg,#FFF5F6,#FDE6EA);border:1px solid #F7D6DA}
+.lg-who.bad{background:var(--red-soft);color:var(--red);border:1px solid #F7C9CF}
+.lg-who.warn{background:#FFF6EA;border:1px solid #F4E2CA}
+.lg-who .avatar{width:40px;height:40px;font-size:14px;flex-shrink:0}
+.lg-who > span:last-child{display:flex;flex-direction:column;line-height:1.25;min-width:0}
+.lg-who b{font-size:15px;color:var(--ink)}
+.lg-who small{font-size:12px;color:var(--muted)}
+@keyframes lgIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+.lg-btns{display:grid;grid-template-columns:1fr 1.6fr;gap:10px}
+.lg-btns .btn:disabled{opacity:.45;cursor:not-allowed}
+.lg-forgot{margin-top:-8px}

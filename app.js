@@ -379,11 +379,12 @@ function loginView(err) {
     <div class="login-logo"><img src="icons/logo-t.png" alt="Ari's Closet"></div>
     <h1>Bienvenida</h1>
     <p>Entrá con tu usuario para abrir caja</p>
-    <div class="field"><label for="lgE">Usuario</label><input id="lgE" name="e" type="text" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="Ej. mvaldivia" required></div>
+    <div class="field"><label for="lgE">Usuario</label><div class="lg-user"><input id="lgE" name="e" type="text" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="Ej. mvaldivia" required><span class="lg-state" id="lgState" aria-hidden="true"></span></div></div>
+    <div class="lg-who" id="lgWho" aria-live="polite"></div>
     <div class="field"><label for="lgP">Contraseña</label><input id="lgP" name="p" type="password" autocomplete="current-password" required></div>
     ${err ? `<div class="err">${esc(err)}</div>` : ""}
-    <button class="btn dark lg block" type="submit">Entrar</button>
-    <button class="btn ghost block" type="button" id="lgForgot">Olvidé mi contraseña</button>
+    <div class="lg-btns"><button class="btn lg" type="button" id="lgCancel">Cancelar</button><button class="btn dark lg" type="submit" id="lgGo">Entrar</button></div>
+    <button class="btn ghost block lg-forgot" type="button" id="lgForgot">Olvidé mi contraseña</button>
     ${installHTML()}
   </form></div>`;
   return `<div class="login">${loginPattern()}<form class="login-card" id="loginForm">
@@ -406,6 +407,25 @@ function bindLogin() {
       if (error) { btn.disabled = false; btn.textContent = "Entrar"; return toast(errMsg(error), true); }
       cloudStart(data.user);
     };
+    // Al escribir el usuario se busca en la base y se muestra su nombre (o se avisa que no existe)
+    const inp = $("#lgE"), who = $("#lgWho"), state = $("#lgState"), go = $("#lgGo");
+    let seq = 0, timer = null, found = null, checked = "";
+    const show = (cls, html, st) => { who.className = "lg-who " + cls; who.innerHTML = html; state.className = "lg-state " + (st || ""); };
+    const check = async () => {
+      const u = inp.value.trim(); if (u === checked) return; const my = ++seq; found = null; checked = u;
+      if (u.length < 3) { go.disabled = false; return show("", ""); }
+      state.className = "lg-state busy";
+      let r; try { r = await sbq(sb.rpc("login_lookup", { p_email: toEmail(u) })); } catch { if (my === seq) { go.disabled = false; checked = ""; show("", ""); } return; }
+      if (my !== seq) return;
+      if (!r || !r.found) { go.disabled = true; return show("bad", `No existe el usuario <b>${esc(u)}</b>. Revisá cómo lo escribiste.`, "bad"); }
+      if (!r.active) { go.disabled = false; return show("warn", `<span class="avatar grey">${esc(initials(r.name))}</span><span><b>${esc(r.name)}</b><small>Cuenta pendiente de activación</small></span>`, "warn"); }
+      found = r; go.disabled = false;
+      show("ok", `<span class="avatar ${/propiet/i.test(r.role) ? "red" : ""}">${esc(initials(r.name))}</span><span><small>Hola,</small><b>${esc(r.name)}</b><small>${esc(r.role)}</small></span>`, "ok");
+    };
+    inp.oninput = () => { clearTimeout(timer); go.disabled = false; timer = setTimeout(check, 350); };
+    inp.onblur = () => { clearTimeout(timer); check(); };
+    inp.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); clearTimeout(timer); check().then(() => { if (found || !go.disabled) $("#lgP").focus(); }); } };
+    $("#lgCancel").onclick = () => { seq++; clearTimeout(timer); found = null; checked = ""; inp.value = ""; $("#lgP").value = ""; show("", ""); go.disabled = false; inp.focus(); toast("Ingreso cancelado"); };
     $("#lgForgot").onclick = async () => {
       const email = $("#lgE").value.trim();
       if (!email.includes("@")) return toast("Pedile a la propietaria que te asigne una contraseña nueva (Usuarios → Editar)");
