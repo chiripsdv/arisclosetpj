@@ -96,7 +96,7 @@ const CFG = window.ARIS_CONFIG || {};
 const CLOUD = !!(CFG.url && CFG.anonKey && window.supabase) && !/[?&]demo\b/.test(location.search);
 const sb = CLOUD ? window.supabase.createClient(CFG.url, CFG.anonKey, { auth: { persistSession: true, autoRefreshToken: true, storageKey: "aris-auth" } }) : null;
 const CL = { catId: {}, catName: {}, brandId: {}, brandName: {}, ecatId: {}, ecatName: {}, pending: null, rt: null, rtT: null, newSales: [] };
-// Usuarios con nombre corto (mvaldivia): por dentro Supabase usa mvaldivia@<dominio>
+// Usuarios con nombre corto (nusuario): por dentro Supabase usa nusuario@<dominio>
 const UDOM = String(CFG.userDomain || "ariscloset.app").toLowerCase();
 const toEmail = (u) => { u = String(u || "").trim().toLowerCase(); return u.includes("@") ? u : `${u}@${UDOM}`; };
 const userOf = (email) => { const e = String(email || "").toLowerCase(); return e.endsWith("@" + UDOM) ? e.slice(0, -UDOM.length - 1) : e; };
