@@ -379,7 +379,7 @@ function loginView(err) {
     <div class="login-logo"><img src="icons/logo-t.png" alt="Ari's Closet"></div>
     <h1>Bienvenida</h1>
     <p>Entrá con tu usuario para abrir caja</p>
-    <div class="field"><label for="lgE">Usuario</label><div class="lg-user"><input id="lgE" name="e" type="text" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="Ej. mvaldivia" required><span class="lg-state" id="lgState" aria-hidden="true"></span></div></div>
+    <div class="field"><label for="lgE">Usuario</label><div class="lg-user"><input id="lgE" name="e" type="text" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="Ej. nusuario" required><span class="lg-state" id="lgState" aria-hidden="true"></span></div></div>
     <div class="lg-who" id="lgWho" aria-live="polite"></div>
     <div class="field"><label for="lgP">Contraseña</label><input id="lgP" name="p" type="password" autocomplete="current-password" required></div>
     ${err ? `<div class="err">${esc(err)}</div>` : ""}
