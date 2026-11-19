@@ -398,6 +398,15 @@ function loginView(err) {
     ${installHTML()}
   </form></div>`;
 }
+function byeScreen() {
+  app.innerHTML = `<div class="login">${loginPattern()}<div class="login-card bye">
+    <div class="login-logo"><img src="icons/logo-t.png" alt="Ari's Closet"></div>
+    <h1>¡Hasta pronto!</h1>
+    <p>El ingreso se canceló. Ya podés cerrar esta ${isStandalone() ? "ventana" : "pestaña"}.</p>
+    <button class="btn lg block" id="byeBack">Volver a ingresar</button>
+  </div></div>`;
+  $("#byeBack").onclick = () => render();
+}
 function bindLogin() {
   if (CLOUD) {
     $("#loginForm").onsubmit = async (e) => {
@@ -415,7 +424,7 @@ function bindLogin() {
       const u = inp.value.trim(); if (u === checked) return; const my = ++seq; found = null; checked = u;
       if (u.length < 3) { go.disabled = false; return show("", ""); }
       state.className = "lg-state busy";
-      let r; try { r = await sbq(sb.rpc("login_lookup", { p_email: toEmail(u) })); } catch { if (my === seq) { go.disabled = false; checked = ""; show("", ""); } return; }
+      let r; try { r = await sbq(sb.rpc("login_lookup", { p_email: toEmail(u) })); } catch (e) { console.warn("login_lookup no disponible (¿falta correr 0006_login.sql?)", e); if (my === seq) { go.disabled = false; checked = ""; show("", ""); } return; }
       if (my !== seq) return;
       if (!r || !r.found) { go.disabled = true; return show("bad", `No existe el usuario <b>${esc(u)}</b>. Revisá cómo lo escribiste.`, "bad"); }
       if (!r.active) { go.disabled = false; return show("warn", `<span class="avatar grey">${esc(initials(r.name))}</span><span><b>${esc(r.name)}</b><small>Cuenta pendiente de activación</small></span>`, "warn"); }
@@ -425,7 +434,15 @@ function bindLogin() {
     inp.oninput = () => { clearTimeout(timer); go.disabled = false; timer = setTimeout(check, 350); };
     inp.onblur = () => { clearTimeout(timer); check(); };
     inp.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); clearTimeout(timer); check().then(() => { if (found || !go.disabled) $("#lgP").focus(); }); } };
-    $("#lgCancel").onclick = () => { seq++; clearTimeout(timer); found = null; checked = ""; inp.value = ""; $("#lgP").value = ""; show("", ""); go.disabled = false; inp.focus(); toast("Ingreso cancelado"); };
+    // Autocompletado del navegador: revisa el usuario aunque no se haya tecleado
+    $("#lgP").onfocus = () => check();
+    setTimeout(() => { if (inp.value.trim()) check(); }, 700);
+    // Cancelar: cierra la app instalada o la pestaña; si el navegador no lo permite, deja la pantalla de despedida
+    $("#lgCancel").onclick = () => {
+      seq++; clearTimeout(timer); found = null; checked = ""; inp.value = ""; $("#lgP").value = "";
+      try { window.close(); } catch {}
+      setTimeout(() => { if (!window.closed) byeScreen(); }, 250);
+    };
     $("#lgForgot").onclick = async () => {
       const email = $("#lgE").value.trim();
       if (!email.includes("@")) return toast("Pedile a la propietaria que te asigne una contraseña nueva (Usuarios → Editar)");

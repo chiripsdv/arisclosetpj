@@ -893,3 +893,4 @@ svg.li{width:20px;height:20px;flex-shrink:0;stroke-width:1.9}
 .login-card.green #lgGo{background:linear-gradient(135deg,#43B47A 0%,#1E7A45 100%);box-shadow:0 1px 0 rgba(255,255,255,.25) inset,0 10px 22px -8px rgba(30,122,69,.6),0 3px 6px rgba(30,122,69,.18)}
 .login-card.green #lgCancel{color:#1E7A45;border-color:#1E7A45;box-shadow:0 8px 18px -10px rgba(30,122,69,.35)}
 .login-card.green #lgCancel:hover{background:#F2FAF5}
+.login-card.bye{text-align:center;gap:16px}.login-card.bye p{font-size:14px}#byeBack{color:var(--red);border:1.5px solid var(--red);background:#fff}
