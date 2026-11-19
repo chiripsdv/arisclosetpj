@@ -27,6 +27,22 @@ Se corren **una sola vez**, en orden, en un proyecto nuevo de Supabase.
 > ⚠️ Nunca compartas ni pongas en la app la clave **secret / service_role** ni la contraseña de la base de datos.
 > La clave pública sí puede ir en la app: la seguridad por rol (RLS) es la que protege los datos.
 
+## Conectar la app
+
+La app ya trae la dirección del proyecto y la clave pública en `config.js`. Falta configurar dos cosas en Supabase:
+
+1. **Authentication → URL Configuration:**
+   - **Site URL:** `https://chiripsdv.github.io/arisclosetpj/`
+   - **Redirect URLs:** agregá la misma dirección. Así funciona “Olvidé mi contraseña”.
+2. **Usuarios:**
+   - La propietaria se crea en **Authentication → Users → Add user** (con *Auto Confirm User*). Es el primer usuario y queda como propietaria.
+   - Las demás personas se crean igual desde Supabase. Después la propietaria las **activa** y les elige el **rol** en la app (pantalla Usuarios).
+   - Si dejaste activado *Allow new users to sign up*, la propietaria también puede crear usuarios desde la app (botón **Nuevo usuario**). En ese caso conviene desactivar *Confirm email* para que puedan entrar sin confirmar el correo.
+3. **PIN de autorización:** en la app, Usuarios → columna PIN → **Definir**. Con ese PIN la propietaria o la administradora autorizan descuentos mayores al límite de quien vende.
+
+Para abrir la app con los datos de ejemplo (sin tocar la base real) usá `?demo` al final de la dirección:
+`https://chiripsdv.github.io/arisclosetpj/?demo`
+
 ## Cómo funciona la seguridad
 
 - **El primer usuario es la propietaria**; los siguientes quedan inactivos hasta que ella los active.

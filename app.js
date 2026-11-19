@@ -1,5 +1,5 @@
-/* Ari's Closet · demo PWA. Todo se guarda en localStorage del navegador.
-   En producción la capa "DB" se reemplaza por Supabase (mismas funciones). */
+/* Ari's Closet · PWA de ventas.
+   Con config.js trabaja contra Supabase (nube). Con ?demo usa datos de ejemplo guardados en el navegador. */
 (() => {
 "use strict";
 const KEY = "aris-demo-v4";
@@ -44,7 +44,7 @@ function ensureCodes() {
 }
 function codeTaken(c) { return DB.products.some(p => p.variants.some(v => v.code === c)); }
 function newCode() { let n = 2000000; DB.products.forEach(p => p.variants.forEach(v => { if (/^\d+$/.test(v.code || "")) n = Math.max(n, +v.code); })); return String(n + 1); }
-function save() { localStorage.setItem(KEY, JSON.stringify(DB)); }
+function save() { if (CLOUD) return; localStorage.setItem(KEY, JSON.stringify(DB)); }
 function reset() { localStorage.removeItem(KEY); location.hash = ""; load(); render(); toast("Datos del demo reiniciados"); }
 const money = (n) => `${DB.settings.currency} ${Number(n).toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
 
@@ -82,7 +82,149 @@ let me = null;
 const role = () => DB.roles[me.role];
 const can = (k) => !!role()[k];
 function login(u) { me = u; sessionStorage.setItem(SESSION, u.id); location.hash = role().views[0]; render(); listenScanner(); }
-function logout() { me = null; sessionStorage.removeItem(SESSION); stopScanner(); location.hash = ""; render(); }
+function logout() {
+  me = null; sessionStorage.removeItem(SESSION); stopScanner(); location.hash = ""; S.cart = []; S.disc = null; closeModal();
+  if (CLOUD) { cloudUnsubscribe(); CL.pending = null; DB = emptyDB(); sb.auth.signOut().catch(() => {}); }
+  render();
+}
+const avatarCls = (id) => { const r = userById(id).role; return r === "propietaria" ? "red" : r === "vendedor" ? "grey" : ""; };
+/* ---------- Nube (Supabase) ----------
+   Con config.js la app trabaja contra la base de datos real: login con correo,
+   datos compartidos entre equipos y panel en vivo. Con ?demo usa los datos de ejemplo. */
+const CFG = window.ARIS_CONFIG || {};
+const CLOUD = !!(CFG.url && CFG.anonKey && window.supabase) && !/[?&]demo\b/.test(location.search);
+const sb = CLOUD ? window.supabase.createClient(CFG.url, CFG.anonKey, { auth: { persistSession: true, autoRefreshToken: true, storageKey: "aris-auth" } }) : null;
+const CL = { catId: {}, catName: {}, brandId: {}, brandName: {}, ecatId: {}, ecatName: {}, pending: null, rt: null, rtT: null, newSales: [] };
+const sbq = async (p) => { const { data, error } = await p; if (error) throw error; return data; };
+// Trae todas las filas aunque pasen del límite de 1000 por consulta
+async function sbAll(build) { const out = []; for (let from = 0; ; from += 1000) { const d = await sbq(build().range(from, from + 999)); out.push(...d); if (d.length < 1000) return out; } }
+function errMsg(e) {
+  const m = String((e && (e.message || e.error_description || e.msg)) || e || "");
+  if (/invalid login credentials/i.test(m)) return "Correo o contraseña incorrectos";
+  if (/email not confirmed/i.test(m)) return "Falta confirmar el correo (revisá la bandeja de entrada)";
+  if (/failed to fetch|networkerror|load failed/i.test(m)) return "Sin conexión a internet. Intentá de nuevo.";
+  if (/row-level security|permission denied/i.test(m)) return "Tu rol no tiene permiso para hacer esto";
+  if (/variants_barcode_key|barcode/i.test(m) && /duplicate|unique/i.test(m)) return "Ese código de barras ya lo usa otra prenda";
+  if (/variants_product_id_size_color_key/i.test(m)) return "Hay dos variantes con la misma talla y color";
+  if (/duplicate key|already exists|unique/i.test(m)) return "Ya existe un registro con ese nombre";
+  if (/already registered|user_already_exists/i.test(m)) return "Ese correo ya tiene una cuenta";
+  if (/signups? not allowed|signup.*disabled/i.test(m)) return "Supabase no permite registros desde la app: creá el usuario en Supabase (Authentication → Add user) y después activalo aquí";
+  if (/rate limit/i.test(m)) return "Demasiados intentos seguidos. Esperá unos minutos.";
+  if (/password should be at least/i.test(m)) return "La contraseña debe tener al menos 6 caracteres";
+  if (/stock_check|stock >= 0/i.test(m)) return "No hay stock suficiente";
+  return m.replace(/^.*?ERROR:\s*/, "") || "Algo salió mal";
+}
+const emptyDB = () => ({ settings: { store: "Ari's Closet", currency: "C$", lowStock: 2, minMargin: 5, waCountry: "505", relay: DEFAULT_RELAY, paper: "80", rcLogo: true, rcAddress: "", rcPhone: "", rcRuc: "", rcFooter: "" }, users: [], roles: {}, partners: [], categories: [], brands: [], payMethods: [], expenseCats: [], discountCodes: [], products: [], sales: [], expenses: [], moves: [] });
+const photoUrl = (path) => path ? sb.storage.from("product-photos").getPublicUrl(path).data.publicUrl : null;
+const one = (x) => Array.isArray(x) ? x[0] : x;
+const ROLE_ORDER = ["propietaria", "admin", "vendedor"];
+
+// Lee todo lo que el rol puede ver y lo deja con la misma forma que usa la app
+async function cloudLoad() {
+  const since = new Date(); since.setDate(since.getDate() - 62); const sinceDay = dayOf(since);
+  const [roles, profiles, st, partners, cats, brands, pays, ecats, codes, prods, sales, moves, exps] = await Promise.all([
+    sbq(sb.from("roles").select("*")),
+    sbq(sb.from("profiles").select("*").order("created_at")),
+    sbq(sb.from("settings").select("*").eq("id", 1).maybeSingle()),
+    sbq(sb.from("partners").select("*").eq("active", true).order("created_at")),
+    sbq(sb.from("categories").select("*").order("sort").order("id")),
+    sbq(sb.from("brands").select("*").order("sort").order("id")),
+    sbq(sb.from("payment_methods").select("*").eq("active", true).order("sort").order("id")),
+    sbq(sb.from("expense_categories").select("*").order("sort").order("id")),
+    sbq(sb.from("discount_codes").select("*").eq("active", true).order("created_at")),
+    sbAll(() => sb.from("products").select("*, product_costs(cost), variants(*)").eq("active", true).order("created_at").order("id")),
+    sbAll(() => sb.from("sales").select("*, sale_items(*, sale_item_costs(unit_cost))").gte("day", sinceDay).order("created_at").order("id")),
+    sbAll(() => sb.from("stock_moves").select("*, sales(number)").gte("created_at", since.toISOString()).order("id")),
+    sbAll(() => sb.from("expenses").select("*").gte("day", sinceDay).order("created_at").order("id"))
+  ]);
+  const D = emptyDB();
+  roles.sort((a, b) => ROLE_ORDER.indexOf(a.key) - ROLE_ORDER.indexOf(b.key)).forEach(r => {
+    D.roles[r.key] = { label: r.label, maxDisc: +r.max_disc, views: NAV_KEYS.filter(k => r.views.includes(k)), seeAllSales: r.see_all_sales, canSeeCost: r.can_see_cost, canSeeProfit: r.can_see_profit,
+      canStockIn: r.can_stock_in, canExpense: r.can_expense, canEditCatalog: r.can_edit_catalog, canUsers: r.key === "propietaria", canVoid: r.key !== "vendedor" };
+  });
+  D.users = profiles.map(u => ({ id: u.id, name: u.name, email: u.email, role: u.role, active: u.active }));
+  if (st) D.settings = { store: st.store, currency: st.currency, lowStock: +st.low_stock, minMargin: +st.min_margin, waCountry: st.wa_country, relay: DEFAULT_RELAY, paper: st.paper, rcLogo: st.rc_logo, rcAddress: st.rc_address, rcPhone: st.rc_phone, rcRuc: st.rc_ruc, rcFooter: st.rc_footer };
+  D.partners = partners.map(p => ({ id: p.id, name: p.name, share: +p.share, color: p.color }));
+  const map = (list, idK, nameK) => { CL[idK] = {}; CL[nameK] = {}; list.forEach(c => { CL[nameK][c.id] = c.name; if (c.active) CL[idK][c.name] = c.id; }); return list.filter(c => c.active).map(c => c.name); };
+  D.categories = map(cats, "catId", "catName"); D.brands = map(brands, "brandId", "brandName"); D.expenseCats = map(ecats, "ecatId", "ecatName");
+  D.payMethods = pays.map(p => p.name);
+  D.discountCodes = codes.map(c => ({ code: c.code, pct: +c.pct, maxUses: c.max_uses, uses: c.uses, active: c.active, validFrom: c.valid_from, validTo: c.valid_to }));
+  D.products = prods.map(p => ({ id: p.id, partner: p.partner_id, name: p.name, cat: CL.catName[p.category_id] || "", brand: CL.brandName[p.brand_id] || "", price: +p.price,
+    cost: one(p.product_costs) ? +one(p.product_costs).cost : 0, photo: photoUrl(p.photo_path), photoPath: p.photo_path,
+    variants: (p.variants || []).filter(v => v.active).sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id)).map(v => ({ id: v.id, size: v.size, color: v.color, code: v.barcode, stock: v.stock })) }));
+  D.sales = sales.map(s => ({ id: s.id, n: +s.number, at: s.created_at, day: s.day, seller: s.seller_id, subtotal: +s.subtotal, total: +s.total, pay: s.payment_method, status: s.status, phone: s.customer_phone || "",
+    discount: s.discount_type ? { type: s.discount_type, pct: +s.discount_pct, amount: +s.discount_amount, code: s.discount_code, by: s.authorized_by } : null,
+    items: (s.sale_items || []).map(i => ({ pid: i.product_id, vid: i.variant_id, partner: i.partner_id, name: i.name, size: i.size, color: i.color, qty: i.qty, price: +i.price, cost: one(i.sale_item_costs) ? +one(i.sale_item_costs).unit_cost : 0 })) }));
+  D.moves = moves.map(m => ({ id: m.id, at: m.created_at, vid: m.variant_id, partner: m.partner_id, type: m.type, qty: m.qty, by: m.user_id, ref: m.sales ? m.sales.number : null, note: m.note }));
+  D.expenses = exps.map(e => ({ id: e.id, at: e.created_at, day: e.day, cat: CL.ecatName[e.category_id] || "", amount: +e.amount, note: e.note, partner: e.partner_id || "shared", by: e.user_id, receipt: e.receipt_path }));
+  // Variantes de productos dados de baja: siguen apareciendo en ventas y kárdex
+  DB = D;
+  if (me) { const fresh = DB.users.find(u => u.id === me.id); if (!fresh || !fresh.active || !DB.roles[fresh.role]) { me = null; CL.pending = fresh || {}; return cloudPending(); } me = fresh; }
+}
+function busy(on) { document.body.classList.toggle("is-busy", !!on); }
+// Ejecuta un cambio en la nube, recarga y vuelve a dibujar. Devuelve false si falló (el formulario queda abierto).
+async function act(fn, okMsg) {
+  busy(true);
+  try { await fn(); await cloudLoad(); if (me) render(); if (okMsg) toast(okMsg); return true; }
+  catch (e) { toast(errMsg(e), true); return false; }
+  finally { busy(false); }
+}
+// Redibuja sin interrumpir a quien está escribiendo
+function softRender() {
+  if (!me) return;
+  const a = document.activeElement;
+  if (a && app.contains(a) && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.id !== "posQ") { a.addEventListener("blur", () => setTimeout(() => me && render(), 0), { once: true }); return; }
+  render();
+}
+async function cloudRefresh() {
+  try { await cloudLoad(); } catch { return; }
+  if (!me) return;
+  softRender();
+  const news = CL.newSales.splice(0);
+  news.forEach(id => { const x = DB.sales.find(s => s.id === id); if (x && x.seller !== me.id) toast(`${userById(x.seller).name} vendió ${money(x.total)} · ticket #${x.n}`); });
+}
+const cloudSoon = (ms = 700) => { clearTimeout(CL.rtT); CL.rtT = setTimeout(cloudRefresh, ms); };
+function cloudSubscribe() {
+  if (CL.rt) return;
+  const on = (ch, table) => ch.on("postgres_changes", { event: "*", schema: "public", table }, (p) => { if (table === "sales" && p.eventType === "INSERT" && p.new && p.new.id) CL.newSales.push(p.new.id); cloudSoon(); });
+  CL.rt = ["sales", "variants", "expenses"].reduce(on, sb.channel("tienda")).subscribe();
+}
+function cloudUnsubscribe() { if (CL.rt) { sb.removeChannel(CL.rt); CL.rt = null; } }
+document.addEventListener("visibilitychange", () => { if (CLOUD && me && document.visibilityState === "visible") cloudSoon(100); });
+
+function bootScreen(msg) { $("#toast-root").innerHTML = ""; app.innerHTML = `<div class="boot"><img src="icons/logo-t.png" alt="Ari's Closet"><span class="spinner"></span><small>${esc(msg || "Abriendo caja…")}</small></div>`; }
+async function cloudStart(user) {
+  bootScreen();
+  try {
+    const prof = await sbq(sb.from("profiles").select("*").eq("id", user.id).maybeSingle());
+    if (!prof || !prof.active) { CL.pending = prof || { email: user.email }; return cloudPending(); }
+    me = { id: prof.id };
+    await cloudLoad();
+    if (!me) return;
+    CL.pending = null;
+    if (!role().views.includes(location.hash.replace("#", ""))) location.hash = role().views[0];
+    render(); cloudSubscribe(); listenScanner();
+  } catch (e) { me = null; app.innerHTML = loginView(errMsg(e)); bindLogin(); }
+}
+function cloudPending() {
+  cloudUnsubscribe(); stopScanner();
+  const p = CL.pending || {};
+  app.innerHTML = `<div class="login">${loginPattern()}<div class="login-card">
+    <div class="login-logo"><img src="icons/logo-t.png" alt="Ari's Closet"></div>
+    <h1>Cuenta pendiente</h1>
+    <p>${p.name ? esc(p.name) + ", tu" : "Tu"} cuenta${p.email ? " <b>" + esc(p.email) + "</b>" : ""} todavía no está activa. La propietaria tiene que activarla en <b>Usuarios</b>.</p>
+    <button class="btn dark lg block" id="pendRetry">Ya me activaron</button>
+    <button class="btn ghost block" data-act="logout">Salir</button>
+  </div></div>`;
+  $("#pendRetry").onclick = async () => { const { data } = await sb.auth.getUser(); if (data && data.user) cloudStart(data.user); else logout(); };
+}
+// Sube una imagen (dataURL) a Storage y devuelve su ruta
+async function uploadImg(bucket, path, dataUrl) {
+  const blob = await (await fetch(dataUrl)).blob();
+  await sbq(sb.storage.from(bucket).upload(path, blob, { contentType: "image/jpeg", upsert: true }));
+  return path;
+}
+
 
 /* ---------- Estado UI ---------- */
 const S = { spk: (() => { try { return +localStorage.getItem("aris-spk") === 30 ? 30 : 7; } catch { return 7; } })(), sb: (() => { try { return localStorage.getItem("aris-sb") === "1"; } catch { return false; } })(), cart: [], disc: null, pay: "Efectivo", q: "", invFilter: "Todo", invQ: "", repRange: "hoy", sim: false, custom: false, partner: "all" };
@@ -226,7 +368,18 @@ const LOGIN_DECO = [
 function loginPattern() {
   return `<div class="login-bg" aria-hidden="true">${LOGIN_DECO.map(([k, x, y, sz, rot, red]) => `<span class="deco ${red ? "red" : ""}" style="left:${x}%;top:${y}%;--s:${sz};transform:translate(-50%,-50%) rotate(${rot}deg)">${ART.icon(k)}</span>`).join("")}</div>`;
 }
-function loginView() {
+function loginView(err) {
+  if (CLOUD) return `<div class="login">${loginPattern()}<form class="login-card" id="loginForm">
+    <div class="login-logo"><img src="icons/logo-t.png" alt="Ari's Closet"></div>
+    <h1>Bienvenida</h1>
+    <p>Entrá con tu correo para abrir caja</p>
+    <div class="field"><label for="lgE">Correo</label><input id="lgE" name="e" type="email" autocomplete="username" required></div>
+    <div class="field"><label for="lgP">Contraseña</label><input id="lgP" name="p" type="password" autocomplete="current-password" required></div>
+    ${err ? `<div class="err">${esc(err)}</div>` : ""}
+    <button class="btn dark lg block" type="submit">Entrar</button>
+    <button class="btn ghost block" type="button" id="lgForgot">Olvidé mi contraseña</button>
+    ${installHTML()}
+  </form></div>`;
   return `<div class="login">${loginPattern()}<form class="login-card" id="loginForm">
     <div class="login-logo"><img src="icons/logo-t.png" alt="Ari's Closet"></div>
     <h1>Bienvenida</h1>
@@ -239,6 +392,21 @@ function loginView() {
   </form></div>`;
 }
 function bindLogin() {
+  if (CLOUD) {
+    $("#loginForm").onsubmit = async (e) => {
+      e.preventDefault(); const f = new FormData(e.target), btn = e.target.querySelector("[type=submit]");
+      btn.disabled = true; btn.textContent = "Entrando…";
+      const { data, error } = await sb.auth.signInWithPassword({ email: String(f.get("e")).trim(), password: f.get("p") });
+      if (error) { btn.disabled = false; btn.textContent = "Entrar"; return toast(errMsg(error), true); }
+      cloudStart(data.user);
+    };
+    $("#lgForgot").onclick = async () => {
+      const email = $("#lgE").value.trim(); if (!email) { $("#lgE").focus(); return toast("Escribí tu correo primero", true); }
+      const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname });
+      toast(error ? errMsg(error) : "Te enviamos un correo para crear una contraseña nueva", !!error);
+    };
+    return;
+  }
   $("#loginForm").onsubmit = (e) => { e.preventDefault(); const f = new FormData(e.target); const u = DB.users.find(x => x.id === f.get("u")); if (u && u.pass === f.get("p")) login(u); else toast("Contraseña incorrecta", true); };
 }
 
@@ -262,7 +430,7 @@ function panelView() {
   const byPartner = DB.partners.map(p => { const ps = salesOf(t).map(x => scopeSale(x, p.id)).filter(Boolean); return { p, t: ps.reduce((a, x) => a + x.total, 0), q: ps.reduce((a, x) => a + x.items.reduce((b, i) => b + i.qty, 0), 0) }; });
   const pmax = Math.max(1, ...byPartner.map(x => x.t));
   return topbar(`${greet()}, ${esc(me.name)}`, S.partner === "all" ? fmtDL(new Date()) : `${esc(partnerById(S.partner).name)} · ${fmtDL(new Date())}`, `
-    ${!mine ? `<label class="toggle hide-m" title="Genera una venta de otro dispositivo cada pocos segundos"><input type="checkbox" id="simToggle" ${S.sim ? "checked" : ""}> <span class="tl-long">Simular ventas de otros dispositivos</span><span class="tl-short">Simular</span></label>` : ""}
+    ${!mine && !CLOUD ? `<label class="toggle hide-m" title="Genera una venta de otro dispositivo cada pocos segundos"><input type="checkbox" id="simToggle" ${S.sim ? "checked" : ""}> <span class="tl-long">Simular ventas de otros dispositivos</span><span class="tl-short">Simular</span></label>` : ""}
     <a href="#venta" class="btn red">${I.plus}<span class="hide-m">Nueva venta</span></a>`) + `
   <div class="content">
     <div class="panel-tools">${partnerSeg()}${spkRangeSeg()}</div>
@@ -277,7 +445,7 @@ function panelView() {
       <section class="card">
         <div class="card-h"><h2>${mine ? "Mis ventas de hoy" : "Ventas en vivo"} <span class="live">EN VIVO</span></h2><span class="hint live-count">${list.length} ${list.length === 1 ? "venta" : "ventas"} · ${money(list.reduce((a, x) => a + x.total, 0))}</span><a href="#reportes" class="btn sm ${role().views.includes("reportes") ? "" : "hide-m hide-d"}">Reportes</a></div>
         <div class="tbl-wrap live-list lv-a"><table><thead><tr><th>Hora</th><th>Vendedora</th><th>Artículos</th><th>Descuento</th><th class="r">Total</th></tr></thead><tbody>
-        ${list.length ? list.map((x, i) => `<tr class="${i === 0 ? "hl" : ""} clickable" data-sale-detail="${x.id}" title="Ver detalle"><td><b>${fmtT(x.at)}</b><span class="tk">#${x.n}</span></td><td><span class="who"><span class="avatar ${x.seller === "u1" ? "red" : x.seller === "u3" ? "grey" : ""}" title="${esc(userById(x.seller).name)}">${esc(userById(x.seller).name[0])}</span><span class="who-n">${esc(userById(x.seller).name)}</span></span></td><td>${itemsCell(x)}</td><td>${discChip(x.discount)}</td><td class="r"><b>${money(x.total)}</b></td></tr>`).join("") : `<tr><td colspan="6" class="empty">Todavía no hay ventas hoy. ¡Registrá la primera!</td></tr>`}
+        ${list.length ? list.map((x, i) => `<tr class="${i === 0 ? "hl" : ""} clickable" data-sale-detail="${x.id}" title="Ver detalle"><td><b>${fmtT(x.at)}</b><span class="tk">#${x.n}</span></td><td><span class="who"><span class="avatar ${avatarCls(x.seller)}" title="${esc(userById(x.seller).name)}">${esc(userById(x.seller).name[0])}</span><span class="who-n">${esc(userById(x.seller).name)}</span></span></td><td>${itemsCell(x)}</td><td>${discChip(x.discount)}</td><td class="r"><b>${money(x.total)}</b></td></tr>`).join("") : `<tr><td colspan="6" class="empty">Todavía no hay ventas hoy. ¡Registrá la primera!</td></tr>`}
         </tbody></table></div>
       </section>
       <div class="stack">
@@ -314,7 +482,7 @@ function saleDetailModal(id) {
   const split = DB.partners.length > 1 && can("seeAllSales") ? DB.partners.map(p => ({ p, v: scopeSale(x, p.id) })).filter(o => o.v) : [];
   const cost = x.items.reduce((a, i) => a + i.cost * i.qty, 0);
   modal(`<div class="modal-h"><div><h3>Ticket #${x.n}</h3><div class="hint">${fmtDL(new Date(x.at))} · ${fmtT(x.at)}</div></div><button class="btn icon ghost" data-close>${I.x}</button></div>
-    <div class="sd-meta"><span class="who"><span class="avatar ${x.seller === "u1" ? "red" : x.seller === "u3" ? "grey" : ""}">${esc(userById(x.seller).name[0])}</span>${esc(userById(x.seller).name)}</span><span class="chip">${esc(x.pay)}</span>${x.discount ? discChip(x.discount) : ""}${x.status !== "cerrada" ? `<span class="chip red">${esc(x.status)}</span>` : ""}</div>
+    <div class="sd-meta"><span class="who"><span class="avatar ${avatarCls(x.seller)}">${esc(userById(x.seller).name[0])}</span>${esc(userById(x.seller).name)}</span><span class="chip">${esc(x.pay)}</span>${x.discount ? discChip(x.discount) : ""}${x.status !== "cerrada" ? `<span class="chip red">${esc(x.status)}</span>` : ""}</div>
     <div class="sd-items">${x.items.map(i => `<div class="cart-item">${ART.thumb(prodById(i.pid) || { cat: "" }, "sm")}<div class="i"><b>${esc(i.name)}</b><span>${esc(i.size)} · ${esc(i.color)} · ${i.qty} × ${money(i.price)}${split.length > 1 ? ` · ${esc(partnerById(itemPartner(i)).name)}` : ""}</span></div><b class="sd-amt">${money(i.price * i.qty)}</b></div>`).join("")}</div>
     <div class="totals" style="padding:0 2px">
       <div><span>${x.items.reduce((a, i) => a + i.qty, 0)} artículos · subtotal</span><span>${money(x.subtotal)}</span></div>
@@ -323,7 +491,22 @@ function saleDetailModal(id) {
       ${showCost ? `<div><span>Costo de la mercadería</span><span>${money(cost)}</span></div><div><span>Margen</span><span style="color:var(--green);font-weight:600">${money(x.total - cost)} · ${x.total ? Math.round((x.total - cost) / x.total * 100) : 0} %</span></div>` : ""}
     </div>
     ${split.length > 1 ? `<div class="split">${split.map(o => `<span class="who">${pDot(o.p.id)}${esc(o.p.name)} <b>${money(o.v.total)}</b></span>`).join("")}</div>` : ""}
-    <div class="ticket-actions"><button class="btn" data-act="print" data-sale="${x.id}">${I.print} Reimprimir</button><button class="btn red" data-act="reticket" data-sale="${x.id}">${I.wa} Enviar ticket</button></div>`);
+    <div class="ticket-actions"><button class="btn" data-act="print" data-sale="${x.id}">${I.print} Reimprimir</button><button class="btn red" data-act="reticket" data-sale="${x.id}">${I.wa} Enviar ticket</button>${can("canVoid") && x.status === "cerrada" ? `<button class="btn ghost" data-act="void" data-sale="${x.id}">Anular venta</button>` : ""}</div>`);
+}
+// Anular: devuelve las prendas al stock y la venta deja de contar en caja y reportes
+function voidModal(id) {
+  const x = DB.sales.find(s => s.id === id); if (!x) return;
+  modal(`<div class="modal-h"><h3>Anular ticket #${x.n}</h3><button class="btn icon ghost" data-close>${I.x}</button></div>
+    <p class="hint" style="margin:0">Las ${x.items.reduce((a, i) => a + i.qty, 0)} prendas vuelven al inventario y ${money(x.total)} salen de la caja. Queda registrado quién la anuló.</p>
+    <form id="f" class="form"><div class="field full"><label>Motivo</label><input name="reason" required placeholder="Ej. La clienta devolvió la compra"></div>
+    <button class="btn red lg full">Anular venta</button></form>`, f => {
+    const reason = f.get("reason").trim();
+    if (CLOUD) return act(() => sbq(sb.rpc("void_sale", { p_sale: id, p_reason: reason })), `Ticket #${x.n} anulado`);
+    x.status = "anulada"; x.voidReason = reason;
+    x.items.forEach(i => { const r = varById(i.vid); if (r) r.v.stock += i.qty; DB.moves.push({ id: uid(), at: new Date().toISOString(), vid: i.vid, partner: i.partner, type: "anulacion", qty: i.qty, by: me.id, ref: x.n }); });
+    if (x.discount && x.discount.type === "codigo") { const dc = DB.discountCodes.find(d => d.code === x.discount.code); if (dc) dc.uses = Math.max(0, dc.uses - 1); }
+    save(); render(); toast(`Ticket #${x.n} anulado`);
+  });
 }
 // Mini-gráfica de tendencia de cada tarjeta: datos reales de los últimos 7 o 30 días.
 // Al pasar el mouse (o el dedo) muestra la fecha y el valor de cada día.
@@ -373,7 +556,7 @@ function myPanelView() {
   const s = mine(t), units = s.reduce((a, x) => a + x.items.reduce((b, i) => b + i.qty, 0), 0), total = s.reduce((a, x) => a + x.total, 0);
   const week = []; for (let i = 6; i >= 0; i--) { const d = new Date(); d.setDate(d.getDate() - i); week.push(dayOf(d)); }
   const ws = week.map(d => mine(d)), wTotal = ws.flat().reduce((a, x) => a + x.total, 0), wUnits = ws.flat().reduce((a, x) => a + x.items.reduce((b, i) => b + i.qty, 0), 0);
-  const top = {}; s.forEach(x => x.items.forEach(i => { const k = `${i.name}\u0001${i.size} ${i.color}`; top[k] = top[k] || { q: 0, t: 0 }; top[k].q += i.qty; top[k].t += i.price * i.qty; }));
+  const top = {}; s.forEach(x => x.items.forEach(i => { const k = `${i.name}\u0001${i.size} ${i.color}`; top[k] = top[k] || { q: 0, t: 0 }; top[k].q += i.qty; top[k].t += Math.round(i.price * i.qty * (x.subtotal ? x.total / x.subtotal : 1)); }));
   const topL = Object.entries(top).sort((a, b) => b[1].q - a[1].q);
   const list = s.slice().sort((a, b) => b.at.localeCompare(a.at));
   const perDay = ws.map(x => x.reduce((a, y) => a + y.items.reduce((b, i) => b + i.qty, 0), 0)), pmax = Math.max(1, ...perDay);
@@ -420,11 +603,11 @@ function ventaView() {
   const { subtotal, amount, total } = cartCalc();
   const lim = role().maxDisc;
   const n = (DB.sales.reduce((a, s) => Math.max(a, s.n), 400) + 1);
-  return topbar("Nueva venta", `Ticket #${n} · ${esc(me.name)}`, `<button class="btn" data-act="camscan" title="Escanear con la cámara de este equipo">${I.cam}<span class="hide-m">Cámara</span></button><button class="btn hide-m ${phoneOnline() ? "scan-on" : ""}" data-act="pair" id="scanBadge" title="Usar un celular como escáner de esta computadora">${I.phone}<span>${phoneOnline() ? "Celular conectado" : "Escanear con celular"}</span></button>`) + `
+  return topbar("Nueva venta", `${CLOUD ? "" : "Ticket #" + n + " · "}${esc(me.name)}`, `<button class="btn" data-act="camscan" title="Escanear con la cámara de este equipo">${I.cam}<span class="hide-m">Cámara</span></button><button class="btn hide-m ${phoneOnline() ? "scan-on" : ""}" data-act="pair" id="scanBadge" title="Usar un celular como escáner de esta computadora">${I.phone}<span>${phoneOnline() ? "Celular conectado" : "Escanear con celular"}</span></button>`) + `
   <div class="content pos">
     <section class="stack" style="gap:12px">
       <div class="search full">${I.search}<input id="posQ" placeholder="Buscar producto, talla, color o código de barras" value="${esc(S.q)}" autocomplete="off" enterkeyhint="search"></div>
-      <div class="prod-grid">${prods.map(p => `<div class="prod">${ART.thumb(p, "big")}<b>${esc(p.name)}</b><span class="hint">${esc(p.brand)} · ${esc(p.cat)}</span><span class="pr">${money(p.price)}</span>
+      <div class="prod-grid">${prods.map(p => `<div class="prod">${ART.thumb(p, "big")}<b>${esc(p.name)}</b><span class="hint">${p.brand ? esc(p.brand) + " · " : ""}${esc(p.cat)}</span><span class="pr">${money(p.price)}</span>
         ${DB.partners.length > 1 ? `<span class="hint who" style="gap:6px">${pDot(p.partner)}${esc(partnerById(p.partner).name)}</span>` : ""}<div class="vars">${p.variants.map(v => `<button data-add="${v.id}" ${v.stock <= 0 ? "disabled" : ""} class="${v.stock <= DB.settings.lowStock ? "low" : ""}" title="Código ${esc(v.code)} · stock ${v.stock}">${esc(v.size)} ${esc(v.color)} · ${v.stock}</button>`).join("")}</div></div>`).join("") || `<div class="empty">Sin resultados</div>`}</div>
     </section>
     <aside class="card cart-panel hide-m" style="padding:16px">${cartHTML()}</aside>
@@ -504,6 +687,7 @@ function checkMargin() {
 }
 function cobrar() {
   if (!S.cart.length || !checkMargin()) return;
+  if (CLOUD) return cobrarCloud();
   const { subtotal, amount, total } = cartCalc();
   const now = new Date();
   const sale = { id: uid(), n: DB.sales.reduce((a, s) => Math.max(a, s.n), 400) + 1, at: now.toISOString(), day: today(), seller: me.id, items: S.cart.map(c => ({ ...c })), subtotal,
@@ -515,6 +699,27 @@ function cobrar() {
   S.cart = []; S.disc = null; S.pay = "Efectivo"; S.cartOpen = false;
   render();
   showTicket(sale);
+}
+// La venta se registra en la base (precios, stock y descuentos se validan allá)
+async function cobrarCloud() {
+  if (S.busy) return;
+  const cart = S.cart.map(c => ({ ...c })), disc = S.disc, pay = S.pay;
+  const p_discount = !disc ? null : disc.type === "manual" ? { type: "manual", pct: disc.pct } : disc.type === "codigo" ? { type: "codigo", code: disc.code } : { type: "pin", pct: disc.pct, pin: disc.pin };
+  S.busy = true; busy(true);
+  document.querySelectorAll('[data-act="cobrar"]').forEach(b => { b.disabled = true; b.dataset.txt = b.innerHTML; b.textContent = "Registrando…"; });
+  try {
+    const r = await sbq(sb.rpc("register_sale", { p_items: cart.map(c => ({ variant_id: c.vid, qty: c.qty })), p_payment: pay, p_discount, p_phone: null }));
+    const sale = { id: r.id, n: +r.number, at: r.created_at, day: today(), seller: me.id, items: cart, subtotal: +r.subtotal, total: +r.total, pay, status: "cerrada",
+      discount: disc ? { type: disc.type, pct: disc.pct, code: disc.code || null, by: disc.by || null, amount: +r.discount } : null };
+    DB.sales.push(sale);
+    cart.forEach(c => { const x = varById(c.vid); if (x) x.v.stock -= c.qty; });
+    S.cart = []; S.disc = null; S.pay = "Efectivo"; S.cartOpen = false;
+    render(); showTicket(sale); cloudSoon(1500);
+  } catch (e) {
+    toast(errMsg(e), true);
+    document.querySelectorAll('[data-act="cobrar"]').forEach(b => { b.disabled = false; if (b.dataset.txt) b.innerHTML = b.dataset.txt; });
+    cloudSoon(100);
+  } finally { S.busy = false; busy(false); }
 }
 function ticketText(s) {
   const L = [DB.settings.store.toUpperCase(), "Ticket #" + s.n, new Date(s.at).toLocaleString("es"), "Atendió: " + userById(s.seller).name, "".padEnd(32, "-")];
@@ -609,7 +814,7 @@ function invView() {
     ${partnerSeg()}
     <div class="search full">${I.search}<input id="invQ" placeholder="Producto, marca, categoría o código" value="${esc(S.invQ)}"></div>
     <div class="seg">${["Todo", "Ropa", "Calzado", "Bolsos y accesorios", "Stock bajo"].map(f => `<button data-inv="${f}" class="${S.invFilter === f ? "on" + (f === "Stock bajo" ? " red" : "") : ""}">${f}${f === "Stock bajo" ? " · " + lowStockP().length : ""}</button>`).join("")}</div>
-    <div class="inv-grid">${prods.map(p => { const st = p.variants.reduce((a, v) => a + v.stock, 0); return `<div class="card inv-item"><div class="inv-top"><button class="art-btn" data-photo="${p.id}" title="${can("canEditCatalog") ? "Cambiar foto" : ""}" ${can("canEditCatalog") ? "" : "disabled"}>${ART.thumb(p, "sm")}</button><div class="i"><b>${esc(p.name)}</b><span>${esc(p.brand)} · ${money(p.price)}${can("canSeeCost") ? " · costo " + money(p.cost) : ""}</span>${DB.partners.length > 1 ? `<span class="who" style="gap:6px;margin-top:3px">${pDot(p.partner)}${esc(partnerById(p.partner).name)}</span>` : ""}</div><div class="n"><b>${st}</b><span>en stock</span></div></div>
+    <div class="inv-grid">${prods.map(p => { const st = p.variants.reduce((a, v) => a + v.stock, 0); return `<div class="card inv-item"><div class="inv-top"><button class="art-btn" data-photo="${p.id}" title="${can("canEditCatalog") ? "Cambiar foto" : ""}" ${can("canEditCatalog") ? "" : "disabled"}>${ART.thumb(p, "sm")}</button><div class="i"><b>${esc(p.name)}</b><span>${p.brand ? esc(p.brand) + " · " : ""}${money(p.price)}${can("canSeeCost") ? " · costo " + money(p.cost) : ""}</span>${DB.partners.length > 1 ? `<span class="who" style="gap:6px;margin-top:3px">${pDot(p.partner)}${esc(partnerById(p.partner).name)}</span>` : ""}</div><div class="n"><b>${st}</b><span>en stock</span></div></div>
       <div class="vchips">${p.variants.map(v => `<span class="chip ${v.stock === 0 ? "solid-red" : v.stock <= DB.settings.lowStock ? "red" : ""}" title="Código ${esc(v.code)}">${esc(v.size)} ${esc(v.color)} · ${v.stock}</span>`).join("")}</div>${can("canEditCatalog") ? `<button class="btn sm edit-btn" data-editprod="${p.id}">${I.edit} Editar</button>` : ""}</div>`; }).join("") || `<div class="empty">Sin productos</div>`}</div>
   </div>`;
 }
@@ -626,7 +831,9 @@ function stockInModal(preVid) {
   <div class="field"><label>Motivo</label><select name="type"><option value="compra">Compra a proveedor</option><option value="ajuste">Ajuste de inventario</option><option value="devolucion">Devolución de cliente</option></select></div>
   <button class="btn dark lg full" type="submit">Guardar entrada</button></form>`, (f) => {
     const r = varById(f.get("vid")); if (!r) { toast("Elegí una variante", true); return false; }
-    const q = +f.get("qty"); r.v.stock += q;
+    const q = +f.get("qty");
+    if (CLOUD) return act(() => sbq(sb.rpc("stock_in", { p_variant: r.v.id, p_qty: q, p_type: f.get("type"), p_note: null })), `+${q} ${r.p.name} ${r.v.size} ${r.v.color} · ${partnerById(r.p.partner).name}`);
+    r.v.stock += q;
     DB.moves.push({ id: uid(), at: new Date().toISOString(), vid: r.v.id, partner: r.p.partner, type: f.get("type"), qty: q, by: me.id }); save(); render(); toast(`+${q} ${r.p.name} ${r.v.size} ${r.v.color} · ${partnerById(r.p.partner).name}`);
   });
   $("#siPartner").onchange = (e) => { $("#siVid").innerHTML = optsFor(e.target.value); };
@@ -648,7 +855,7 @@ function editProdModal(id) {
   const vrow = (v, i) => `<div class="vrow" data-vrow="${v ? v.id : "new"}">
       <input name="v_size" value="${esc(v ? v.size : "")}" placeholder="Talla" aria-label="Talla" required>
       <input name="v_color" value="${esc(v ? v.color : "")}" placeholder="Color" aria-label="Color" required>
-      <input name="v_code" value="${esc(v ? v.code : newCode())}" placeholder="Código" aria-label="Código de barras" inputmode="numeric">
+      <input name="v_code" value="${esc(v ? v.code : CLOUD ? "" : newCode())}" placeholder="${v || !CLOUD ? "Código" : "Automático"}" aria-label="Código de barras" inputmode="numeric">
       <span class="vstock" title="El stock se cambia con Registrar entrada">${v ? v.stock + " uds." : "nueva"}</span>
       <button type="button" class="btn ghost sm" data-delvrow title="Quitar variante" ${v && (v.stock > 0 || sold(v.id)) ? "disabled" : ""}>${I.x}</button>
     </div>`;
@@ -656,7 +863,7 @@ function editProdModal(id) {
   <form id="f" class="form">
     <div class="field full"><label>Nombre</label><input name="name" required value="${esc(p.name)}"></div>
     <div class="field"><label>Categoría</label><select name="cat">${DB.categories.map(c => `<option ${c === p.cat ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></div>
-    <div class="field"><label>Marca</label><select name="brand">${DB.brands.map(c => `<option ${c === p.brand ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></div>
+    <div class="field"><label>Marca</label><select name="brand"><option value="">Sin marca</option>${DB.brands.map(c => `<option ${c === p.brand ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></div>
     ${can("canSeeCost") ? `<div class="field"><label>Costo</label><input name="cost" type="number" min="0" required value="${p.cost}"></div>` : `<input type="hidden" name="cost" value="${p.cost}">`}
     <div class="field"><label>Precio de venta</label><input name="price" type="number" min="0" required value="${p.price}"></div>
     <div class="field full"><label>Socio dueño</label><select name="partner">${partnerOpts(p.partner)}</select></div>
@@ -674,6 +881,8 @@ function editProdModal(id) {
     if (new Set(codes).size !== codes.length) { toast("Hay códigos repetidos", true); return false; }
     const clash = codes.find(c => DB.products.some(x => x.id !== p.id && x.variants.some(v => v.code === c)));
     if (clash) { toast(`El código ${clash} ya lo usa otro producto`, true); return false; }
+    if (CLOUD) return act(() => sbq(sb.rpc("save_product", { p: Object.assign({ id: p.id, name: f.get("name").trim(), category_id: CL.catId[f.get("cat")] || null, brand_id: CL.brandId[f.get("brand")] || null, partner_id: f.get("partner"), price: +f.get("price") },
+      can("canSeeCost") ? { cost: +f.get("cost") } : {}, { variants: rows.map(r => ({ id: r.id === "new" ? null : r.id, size: r.size, color: r.color, barcode: r.code || null })) }) })), "Producto actualizado");
     Object.assign(p, { name: f.get("name").trim(), cat: f.get("cat"), brand: f.get("brand"), cost: +f.get("cost"), price: +f.get("price"), partner: f.get("partner") });
     p.variants = rows.map(r => { const v = p.variants.find(x => x.id === r.id) || { id: uid(), stock: 0 }; return Object.assign(v, { size: r.size, color: r.color, code: r.code || newCode() }); });
     save(); render(); toast("Producto actualizado");
@@ -686,15 +895,17 @@ function newProdModal() {
   <form id="f" class="form">
   <div class="field full"><label>Nombre</label><input name="name" required placeholder="Ej. Falda plisada"></div>
   <div class="field"><label>Categoría</label><select name="cat">${DB.categories.map(c => `<option>${esc(c)}</option>`).join("")}</select></div>
-  <div class="field"><label>Marca</label><select name="brand">${DB.brands.map(c => `<option>${esc(c)}</option>`).join("")}</select></div>
+  <div class="field"><label>Marca</label><select name="brand">${DB.brands.length ? "" : `<option value="">Sin marca</option>`}${DB.brands.map(c => `<option>${esc(c)}</option>`).join("")}</select></div>
   <div class="field full"><label>Socio dueño</label><select name="partner">${partnerOpts(S.partner !== "all" ? S.partner : DB.partners[0].id)}</select></div>
   ${can("canSeeCost") ? `<div class="field"><label>Costo</label><input name="cost" type="number" min="0" required></div>` : `<input type="hidden" name="cost" value="0"><div class="field"><label>Costo</label><span class="hint" style="padding-top:10px">Lo completa la propietaria.</span></div>`}
   <div class="field"><label>Precio de venta</label><input name="price" type="number" min="0" required></div>
   <div class="field"><label>Tallas (separadas por coma)</label><input name="sizes" value="S, M, L" required></div>
   <div class="field"><label>Colores (separados por coma)</label><input name="colors" value="Negro" required></div>
-  <div class="field full"><label>Stock inicial por variante</label><input name="stock" type="number" min="0" value="0"></div>
+  ${can("canStockIn") ? `<div class="field full"><label>Stock inicial por variante</label><input name="stock" type="number" min="0" value="0"></div>` : `<input type="hidden" name="stock" value="0">`}
   <button class="btn dark lg full" type="submit">Crear producto</button></form>`, (f) => {
     const sizes = f.get("sizes").split(",").map(s => s.trim()).filter(Boolean), colors = f.get("colors").split(",").map(s => s.trim()).filter(Boolean);
+    if (CLOUD) return act(() => sbq(sb.rpc("save_product", { p: { name: f.get("name").trim(), category_id: CL.catId[f.get("cat")] || null, brand_id: CL.brandId[f.get("brand")] || null, partner_id: f.get("partner"), price: +f.get("price"), cost: +f.get("cost"),
+      variants: sizes.flatMap(sz => colors.map(c => ({ size: sz, color: c, barcode: null, initial_stock: +f.get("stock") || 0 }))) } })), `Producto "${f.get("name").trim()}" creado con ${sizes.length * colors.length} variantes`);
     const p = { id: uid(), partner: f.get("partner"), name: f.get("name"), cat: f.get("cat"), brand: f.get("brand"), cost: +f.get("cost"), price: +f.get("price"), variants: [] };
     DB.products.push(p);
     sizes.forEach(s => colors.forEach(c => p.variants.push({ id: uid(), size: s, color: c, stock: +f.get("stock"), code: newCode() })));
@@ -725,6 +936,11 @@ function newExpModal() {
   <div class="field full"><label>Detalle</label><input name="note" placeholder="Ej. Pago de luz noviembre" required></div>
   <div class="field full"><label>Comprobante (foto)</label><input name="photo" type="file" accept="image/*" capture="environment"></div>
   <button class="btn dark lg full" type="submit">Guardar gasto</button></form>`, (f) => {
+    if (CLOUD) return act(async () => {
+      const file = f.get("photo"); let receipt_path = null;
+      if (file && file.size) receipt_path = await uploadImg("receipts", `${me.id}/${Date.now()}.jpg`, await ART.compress(file, 1400));
+      await sbq(sb.from("expenses").insert({ category_id: CL.ecatId[f.get("cat")], amount: +f.get("amount"), note: f.get("note").trim(), partner_id: f.get("partner") === "shared" ? null : f.get("partner"), receipt_path }));
+    }, "Gasto registrado");
     DB.expenses.push({ id: uid(), at: new Date().toISOString(), day: today(), cat: f.get("cat"), amount: +f.get("amount"), note: f.get("note"), partner: f.get("partner"), by: me.id }); save(); render(); toast("Gasto registrado");
   });
 }
@@ -814,8 +1030,8 @@ function repView() {
     <section class="card"><div class="card-h"><h2>Inventario valorizado y rotación</h2><span class="hint">vendido en el período seleccionado</span></div>${tbl(`<th>Producto</th><th class="r">Stock</th><th class="r">Vendidas</th><th class="r">Días de stock</th>${P ? `<th class="r">Valor costo</th>` : ""}<th class="r">Valor venta</th><th>Alertas</th>`, rows.map(r => `<tr><td><b>${esc(r.p.name)}</b> <span class="hint">${esc(r.p.cat)}</span></td><td class="r">${r.st}</td><td class="r">${r.sold}</td><td class="r">${r.days == null ? "<span class='hint'>sin ventas</span>" : r.days < 7 ? `<span class="chip red">${r.days} d</span>` : r.days + " d"}</td>${P ? `<td class="r">${money(r.costV)}</td>` : ""}<td class="r">${money(r.priceV)}</td><td>${r.low ? `<span class="chip red">${r.low} variante${r.low > 1 ? "s" : ""}</span>` : `<span class="chip green">OK</span>`}</td></tr>`))}</section>`;
   } else if (tab === "movimientos") {
     const set = new Set(days); const mv = DB.moves.filter(m => set.has(dayOf(new Date(m.at))) && (S.partner === "all" || (m.partner || (varById(m.vid) || { p: {} }).p.partner) === S.partner)).slice().reverse();
-    const lbl = { venta: "Venta", compra: "Compra", ajuste: "Ajuste", devolucion: "Devolución" };
-    body = `<section class="card"><div class="card-h"><h2>Movimientos de inventario (kárdex)</h2><span class="hint">${mv.length} movimientos</span></div>${tbl(`<th>Fecha</th><th>Producto</th><th>Socio</th><th>Tipo</th><th class="r">Cantidad</th><th>Usuario</th><th>Ref.</th>`, mv.map(m => { const r = varById(m.vid); return `<tr><td>${fmtD(m.at)} <span class="hint">${fmtT(m.at)}</span></td><td><b>${r ? esc(r.p.name) : "—"}</b> <span class="hint">${r ? esc(r.v.size + " " + r.v.color) : ""}</span></td><td>${partnerChip(m.partner || (r ? r.p.partner : "s1"))}</td><td><span class="chip ${m.qty < 0 ? "" : "green"}">${lbl[m.type] || m.type}</span></td><td class="r" style="font-weight:700;color:${m.qty < 0 ? "var(--red)" : "var(--green)"}">${m.qty > 0 ? "+" : ""}${m.qty}</td><td>${esc(userById(m.by).name)}</td><td class="hint">${m.ref ? "Ticket #" + m.ref : "—"}</td></tr>`; }), "Sin movimientos registrados en el período (las ventas de ejemplo no generan kárdex; las nuevas sí)")}</section>`;
+    const lbl = { venta: "Venta", compra: "Compra", ajuste: "Ajuste", devolucion: "Devolución", inicial: "Stock inicial", anulacion: "Anulación" };
+    body = `<section class="card"><div class="card-h"><h2>Movimientos de inventario (kárdex)</h2><span class="hint">${mv.length} movimientos</span></div>${tbl(`<th>Fecha</th><th>Producto</th><th>Socio</th><th>Tipo</th><th class="r">Cantidad</th><th>Usuario</th><th>Ref.</th>`, mv.map(m => { const r = varById(m.vid); return `<tr><td>${fmtD(m.at)} <span class="hint">${fmtT(m.at)}</span></td><td><b>${r ? esc(r.p.name) : "—"}</b> <span class="hint">${r ? esc(r.v.size + " " + r.v.color) : ""}</span></td><td>${partnerChip(m.partner || (r ? r.p.partner : ""))}</td><td><span class="chip ${m.qty < 0 ? "" : "green"}">${lbl[m.type] || m.type}</span></td><td class="r" style="font-weight:700;color:${m.qty < 0 ? "var(--red)" : "var(--green)"}">${m.qty > 0 ? "+" : ""}${m.qty}</td><td>${esc(userById(m.by).name)}</td><td class="hint">${m.ref ? "Ticket #" + m.ref : "—"}</td></tr>`; }), CLOUD ? "Sin movimientos en el período" : "Sin movimientos registrados en el período (las ventas de ejemplo no generan kárdex; las nuevas sí)")}</section>`;
   }
   return topbar("Reportes", `${S.partner === "all" ? "Consolidado" : esc(partnerById(S.partner).name)} · ${days.length === 1 ? "hoy" : "últimos " + days.length + " días"} · ${s.length} ventas`, `<button class="btn" data-act="csv">${I.down}<span class="hide-m">Exportar CSV</span></button>`) + `
   <div class="content">
@@ -839,7 +1055,7 @@ function exportCSV() {
 /* ---------- Catálogos ---------- */
 function catView() {
   const list = (title, key, items, render) => `<section class="card"><div class="card-h"><h2>${title}</h2>${can("canEditCatalog") ? `<button class="btn sm" data-addcat="${key}">${I.plus} Agregar</button>` : ""}</div><div class="card-b list" style="padding-top:4px;padding-bottom:4px">${items.map((it, i) => `<div class="row">${render(it)}${can("canEditCatalog") ? `<button class="btn ghost sm" data-delcat="${key}|${i}">${I.x}</button>` : ""}</div>`).join("")}</div></section>`;
-  return topbar("Catálogos", "Listas que usa toda la app", me.role === "propietaria" ? `<button class="btn ghost" data-act="reset" title="Vuelve a los datos de ejemplo">Reiniciar demo</button>` : "") + `
+  return topbar("Catálogos", "Listas que usa toda la app", me.role === "propietaria" && !CLOUD ? `<button class="btn ghost" data-act="reset" title="Vuelve a los datos de ejemplo">Reiniciar demo</button>` : "") + `
   <div class="content"><div class="grid-2" style="grid-template-columns:repeat(auto-fit,minmax(300px,1fr))">
     <section class="card"><div class="card-h"><h2>Ajustes</h2></div><form id="settingsForm" class="card-b form">
       <div class="field"><label>Nombre de la tienda</label><input name="store" value="${esc(DB.settings.store)}"></div>
@@ -847,7 +1063,7 @@ function catView() {
       <div class="field"><label>Alerta de stock bajo (≤)</label><input name="lowStock" type="number" min="0" value="${DB.settings.lowStock}"></div>
       <div class="field"><label>Margen mínimo sobre costo (%)</label><input name="minMargin" type="number" min="0" value="${DB.settings.minMargin}"></div>
       <div class="field"><label>Código de país para WhatsApp</label><input name="waCountry" inputmode="numeric" value="${esc(DB.settings.waCountry)}"></div>
-      <div class="field"><label>Servidor del escáner celular</label><input name="relay" value="${esc(DB.settings.relay)}"></div>
+      ${CLOUD ? "" : `<div class="field"><label>Servidor del escáner celular</label><input name="relay" value="${esc(DB.settings.relay)}"></div>`}
       <div class="full section-title" style="padding-top:6px">Recibo impreso</div>
       <div class="field"><label>Ancho del rollo</label><select name="paper"><option value="80" ${DB.settings.paper !== "58" ? "selected" : ""}>80 mm (estándar)</option><option value="58" ${DB.settings.paper === "58" ? "selected" : ""}>58 mm (pequeña)</option></select></div>
       <div class="field"><label>Logo en el recibo</label><select name="rcLogo"><option value="1" ${DB.settings.rcLogo ? "selected" : ""}>Sí</option><option value="0" ${!DB.settings.rcLogo ? "selected" : ""}>No</option></select></div>
@@ -867,13 +1083,16 @@ function catView() {
     ${list("Categorías de gasto", "expenseCats", DB.expenseCats, c => `<span class="t">${esc(c)}</span>`)}
   </div></div>`;
 }
+const CAT_TABLE = { categories: "categories", brands: "brands", payMethods: "payment_methods", expenseCats: "expense_categories" };
 function addCatModal(key) {
   if (key === "discountCodes") {
     return modal(`<div class="modal-h"><h3>Nuevo código</h3><button class="btn icon ghost" data-close>${I.x}</button></div><form id="f" class="form">
       <div class="field"><label>Código</label><input name="code" required style="text-transform:uppercase"></div><div class="field"><label>Porcentaje</label><input name="pct" type="number" min="1" max="90" required></div>
-      <div class="field full"><label>Usos máximos</label><input name="max" type="number" min="1" value="50"></div><button class="btn dark lg full">Crear</button></form>`, f => { DB.discountCodes.push({ code: f.get("code").toUpperCase().trim(), pct: +f.get("pct"), maxUses: +f.get("max"), uses: 0, active: true }); save(); render(); });
+      <div class="field full"><label>Usos máximos</label><input name="max" type="number" min="1" value="50"></div><button class="btn dark lg full">Crear</button></form>`, f => {
+      if (CLOUD) return act(() => sbq(sb.from("discount_codes").upsert({ code: f.get("code").toUpperCase().trim(), pct: +f.get("pct"), max_uses: +f.get("max"), active: true }, { onConflict: "code" })), "Código creado"); DB.discountCodes.push({ code: f.get("code").toUpperCase().trim(), pct: +f.get("pct"), maxUses: +f.get("max"), uses: 0, active: true }); save(); render(); });
   }
-  modal(`<div class="modal-h"><h3>Agregar</h3><button class="btn icon ghost" data-close>${I.x}</button></div><form id="f" class="form"><div class="field full"><label>Nombre</label><input name="v" required autofocus></div><button class="btn dark lg full">Agregar</button></form>`, f => { DB[key].push(f.get("v").trim()); save(); render(); });
+  modal(`<div class="modal-h"><h3>Agregar</h3><button class="btn icon ghost" data-close>${I.x}</button></div><form id="f" class="form"><div class="field full"><label>Nombre</label><input name="v" required autofocus></div><button class="btn dark lg full">Agregar</button></form>`, f => {
+    if (CLOUD) return act(() => sbq(sb.from(CAT_TABLE[key]).upsert({ name: f.get("v").trim(), active: true }, { onConflict: "name" })), "Agregado"); DB[key].push(f.get("v").trim()); save(); render(); });
 }
 
 function partnerModal(id) {
@@ -887,6 +1106,7 @@ function partnerModal(id) {
     ${id && np === 0 && DB.partners.length > 1 ? `<button type="button" class="btn ghost full" data-delpartner="${id}">Eliminar socio</button>` : id ? `<div class="hint full">Tiene ${np} productos asignados; para eliminarlo primero pasá sus productos a otro socio.</div>` : ""}
   </form>`, f => {
     const v = { name: f.get("name").trim(), share: +f.get("share"), color: f.get("color") };
+    if (CLOUD) return act(() => sbq(id ? sb.from("partners").update(v).eq("id", id) : sb.from("partners").insert(v)), id ? "Socio actualizado" : "Socio creado");
     if (id) Object.assign(DB.partners.find(x => x.id === id), v); else DB.partners.push({ id: "s" + uid(), ...v });
     save(); render(); toast(id ? "Socio actualizado" : "Socio creado");
   });
@@ -894,11 +1114,11 @@ function partnerModal(id) {
 
 /* ---------- Usuarios ---------- */
 function usersView() {
-  return topbar("Usuarios", `${DB.users.filter(u => u.active).length} de 3 activos`, DB.users.length < 3 ? `<button class="btn dark" data-act="newuser">${I.plus}<span class="hide-m">Nuevo usuario</span></button>` : "") + `
-  <div class="content"><section class="card"><div class="tbl-wrap"><table><thead><tr><th>Usuario</th><th>Correo</th><th>Rol</th><th>Límite desc.</th><th>Estado</th><th></th></tr></thead><tbody>
+  return topbar("Usuarios", `${DB.users.filter(u => u.active).length} de 3 activos`, DB.users.filter(u => u.active).length < 3 ? `<button class="btn dark" data-act="newuser">${I.plus}<span class="hide-m">Nuevo usuario</span></button>` : "") + `
+  <div class="content"><section class="card"><div class="tbl-wrap"><table><thead><tr><th>Usuario</th><th>Correo</th><th>Rol</th><th>Límite desc.</th><th>PIN</th><th>Estado</th><th></th></tr></thead><tbody>
   ${DB.users.map(u => `<tr><td><span class="who"><span class="avatar ${u.role === "propietaria" ? "red" : u.role === "vendedor" ? "grey" : ""}">${esc(u.name.slice(0, 2).toUpperCase())}</span><b>${esc(u.name)}</b></span></td><td style="color:var(--muted)">${esc(u.email)}</td>
     <td>${u.id === me.id ? `<span class="chip">${esc(DB.roles[u.role].label)}</span>` : `<select data-role="${u.id}" style="height:32px;border:1px solid var(--line);border-radius:8px;padding:0 8px">${Object.entries(DB.roles).map(([k, r]) => `<option value="${k}" ${u.role === k ? "selected" : ""}>${esc(r.label)}</option>`).join("")}</select>`}</td>
-    <td>${DB.roles[u.role].maxDisc} %</td><td><span class="chip ${u.active ? "green" : "red"}">${u.active ? "Activo" : "Inactivo"}</span></td>
+    <td>${DB.roles[u.role] ? DB.roles[u.role].maxDisc : 0} %</td><td>${u.active && DB.roles[u.role] && DB.roles[u.role].maxDisc > 0 ? `<button class="btn sm ghost" data-setpin="${u.id}">${I.lock} Definir</button>` : `<span class="hint">—</span>`}</td><td><span class="chip ${u.active ? "green" : "red"}">${u.active ? "Activo" : "Inactivo"}</span></td>
     <td class="r">${u.id !== me.id ? `<button class="btn sm" data-toggle="${u.id}">${u.active ? "Desactivar" : "Activar"}</button>` : `<span class="hint">vos</span>`}</td></tr>`).join("")}
   </tbody></table></div></section>
   ${permsHTML()}
@@ -947,13 +1167,42 @@ function setPerm(roleKey, key, on) {
   } else r[key] = on;
   if (key === "canSeeProfit" && on) r.canSeeCost = true;
   if (key === "canSeeCost" && !on) r.canSeeProfit = false;
+  if (CLOUD) return saveRole(roleKey, `${r.label}: permiso ${on ? "activado" : "quitado"}`);
   save(); render(); toast(`${r.label}: permiso ${on ? "activado" : "quitado"}`);
+}
+function saveRole(k, msg) {
+  const r = DB.roles[k];
+  return act(() => sbq(sb.from("roles").update({ views: r.views, max_disc: r.maxDisc, see_all_sales: !!r.seeAllSales, can_see_cost: !!r.canSeeCost, can_see_profit: !!r.canSeeProfit,
+    can_stock_in: !!r.canStockIn, can_expense: !!r.canExpense, can_edit_catalog: !!r.canEditCatalog, updated_at: new Date().toISOString() }).eq("key", k)), msg);
+}
+// Crea la cuenta con un cliente aparte (para no cerrar la sesión de la propietaria) y la activa con su rol
+async function createUserCloud(name, email, password, roleKey) {
+  const tmp = window.supabase.createClient(CFG.url, CFG.anonKey, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false, storageKey: "aris-tmp" } });
+  const { data, error } = await tmp.auth.signUp({ email, password, options: { data: { name } } });
+  if (error) throw error;
+  if (!data.user || (data.user.identities && !data.user.identities.length)) throw new Error("Ese correo ya tiene una cuenta");
+  await sbq(sb.from("profiles").update({ name, role: roleKey, active: true }).eq("id", data.user.id));
+  return !data.session;
+}
+function pinSetModal(id) {
+  const u = userById(id);
+  modal(`<div class="modal-h"><h3>PIN de ${esc(u.name)}</h3><button class="btn icon ghost" data-close>${I.x}</button></div>
+    <p class="hint" style="margin:0">Con este PIN ${esc(u.name)} autoriza descuentos mayores al límite de quien vende, hasta su propio límite (${DB.roles[u.role] ? DB.roles[u.role].maxDisc : 0} %). Se guarda cifrado: nadie lo puede ver.</p>
+    <form id="f" class="form"><div class="field full"><label>PIN nuevo (4 números)</label><input name="pin" type="password" inputmode="numeric" pattern="\\d{4}" maxlength="4" autocomplete="new-password" required></div>
+    <button class="btn dark lg full">Guardar PIN</button></form>`, f => {
+    const pin = String(f.get("pin")).trim(); if (!/^\d{4}$/.test(pin)) { toast("El PIN son 4 números", true); return false; }
+    if (CLOUD) return act(() => sbq(sb.rpc("set_pin", { p_user: id, p_pin: pin })), "PIN guardado");
+    userById(id).pin = pin; save(); toast("PIN guardado");
+  });
 }
 function newUserModal() {
   modal(`<div class="modal-h"><h3>Nuevo usuario</h3><button class="btn icon ghost" data-close>${I.x}</button></div><form id="f" class="form">
   <div class="field"><label>Nombre</label><input name="name" required></div><div class="field"><label>Correo</label><input name="email" type="email" required></div>
   <div class="field"><label>Rol</label><select name="role">${Object.entries(DB.roles).map(([k, r]) => `<option value="${k}">${esc(r.label)}</option>`).join("")}</select></div>
-  <div class="field"><label>Contraseña</label><input name="pass" value="1234" required></div><button class="btn dark lg full">Crear usuario</button></form>`, f => { DB.users.push({ id: uid(), name: f.get("name"), email: f.get("email"), role: f.get("role"), pass: f.get("pass"), pin: "", active: true }); save(); render(); });
+  <div class="field"><label>Contraseña ${CLOUD ? "(mínimo 6)" : ""}</label><input name="pass" value="${CLOUD ? "" : "1234"}" ${CLOUD ? 'minlength="6" autocomplete="new-password"' : ""} required></div>
+  ${CLOUD ? `<p class="hint full" style="margin:0">Pasale el correo y la contraseña a la persona. Puede cambiar la contraseña con “Olvidé mi contraseña”.</p>` : ""}
+  <button class="btn dark lg full">Crear usuario</button></form>`, f => {
+    if (CLOUD) { let confirmMail = false; return act(async () => { confirmMail = await createUserCloud(f.get("name").trim(), String(f.get("email")).trim(), f.get("pass"), f.get("role")); }, "Usuario creado").then(ok => { if (ok && confirmMail) toast("Usuario creado. Tiene que confirmar su correo antes de entrar."); return ok; }); } DB.users.push({ id: uid(), name: f.get("name"), email: f.get("email"), role: f.get("role"), pass: f.get("pass"), pin: "", active: true }); save(); render(); });
 }
 
 /* ---------- PIN / código ---------- */
@@ -970,6 +1219,14 @@ function pinModal(onOk) {
     const k = e.target.closest("button")?.dataset.k; if (k == null) return;
     if (k === "⌫") pin = pin.slice(0, -1); else if (pin.length < 4) pin += k;
     draw();
+    if (pin.length === 4 && CLOUD) {
+      const pct = Math.min(90, Math.max(1, +$("#pinPct").value || 0)), typed = pin;
+      busy(true);
+      sbq(sb.rpc("check_pin", { p_pin: typed, p_pct: pct })).then(r => {
+        if (r && r.ok) { closeModal(); onOk(pct, { id: r.id, name: r.name }, typed); } else { toast((r && r.error) || "PIN incorrecto", true); pin = ""; draw(); }
+      }, e => { toast(errMsg(e), true); pin = ""; draw(); }).finally(() => busy(false));
+      return;
+    }
     if (pin.length === 4) {
       const auth = DB.users.find(u => u.active && u.pin === pin && DB.roles[u.role].maxDisc >= 15);
       const pct = Math.min(90, Math.max(1, +$("#pinPct").value || 0));
@@ -991,7 +1248,15 @@ let modalSubmit = null;
 function modal(html, onSubmit) {
   modalSubmit = onSubmit || null;
   $("#modal-root").innerHTML = `<div class="overlay"><div class="modal">${html}</div></div>`;
-  const f = $("#f"); if (f) { f.onsubmit = (e) => { e.preventDefault(); const r = modalSubmit && modalSubmit(new FormData(f)); if (r !== false) closeModal(); }; const first = f.querySelector("input,select"); if (first && !matchMedia("(pointer:coarse)").matches) first.focus(); }
+  const f = $("#f"); if (f) { f.onsubmit = async (e) => {
+    e.preventDefault(); if (f.dataset.busy) return;
+    let r = modalSubmit && modalSubmit(new FormData(f));
+    if (r && typeof r.then === "function") {
+      const btn = f.querySelector("button[type=submit], button:not([type])"); f.dataset.busy = "1"; if (btn) btn.disabled = true;
+      try { r = await r; } finally { delete f.dataset.busy; if (btn) btn.disabled = false; }
+    }
+    if (r !== false && $("#f") === f) closeModal();
+  }; const first = f.querySelector("input,select"); if (first && !matchMedia("(pointer:coarse)").matches) first.focus(); }
 }
 function closeModal() { stopCam(); $("#modal-root").innerHTML = ""; modalSubmit = null; document.body.classList.remove("lock"); }
 let toastT;
@@ -1003,19 +1268,23 @@ function bind() {
   const posQ = $("#posQ"); if (posQ) posQ.oninput = (e) => { S.q = e.target.value; const pos = e.target.selectionStart; render(); const n = $("#posQ"); n.focus(); n.setSelectionRange(pos, pos); };
   const invQ = $("#invQ"); if (invQ) invQ.oninput = (e) => { S.invQ = e.target.value; const pos = e.target.selectionStart; render(); const n = $("#invQ"); n.focus(); n.setSelectionRange(pos, pos); };
   const sim = $("#simToggle"); if (sim) sim.onchange = (e) => { S.sim = e.target.checked; toast(S.sim ? "Simulando ventas de otros dispositivos…" : "Simulación detenida"); };
-  const sf = $("#settingsForm"); if (sf) sf.onsubmit = (e) => { e.preventDefault(); const f = new FormData(sf); Object.assign(DB.settings, { paper: f.get("paper"), rcLogo: f.get("rcLogo") === "1", rcAddress: f.get("rcAddress").trim(), rcPhone: f.get("rcPhone").trim(), rcRuc: f.get("rcRuc").trim(), rcFooter: f.get("rcFooter").trim() }); Object.assign(DB.settings, { store: f.get("store"), currency: f.get("currency"), lowStock: +f.get("lowStock"), minMargin: +f.get("minMargin"), waCountry: f.get("waCountry").replace(/\D/g, ""), relay: f.get("relay").trim() || DEFAULT_RELAY }); stopScanner(); listenScanner(); save(); render(); toast("Ajustes guardados"); };
+  const sf = $("#settingsForm"); if (sf) sf.onsubmit = (e) => { e.preventDefault(); const f = new FormData(sf);
+    if (CLOUD) return act(() => sbq(sb.from("settings").update({ store: f.get("store").trim(), currency: f.get("currency").trim(), low_stock: +f.get("lowStock"), min_margin: +f.get("minMargin"), wa_country: f.get("waCountry").replace(/\D/g, ""),
+      paper: f.get("paper"), rc_logo: f.get("rcLogo") === "1", rc_address: f.get("rcAddress").trim(), rc_phone: f.get("rcPhone").trim(), rc_ruc: f.get("rcRuc").trim(), rc_footer: f.get("rcFooter").trim(), updated_at: new Date().toISOString() }).eq("id", 1)), "Ajustes guardados"); Object.assign(DB.settings, { paper: f.get("paper"), rcLogo: f.get("rcLogo") === "1", rcAddress: f.get("rcAddress").trim(), rcPhone: f.get("rcPhone").trim(), rcRuc: f.get("rcRuc").trim(), rcFooter: f.get("rcFooter").trim() }); Object.assign(DB.settings, { store: f.get("store"), currency: f.get("currency"), lowStock: +f.get("lowStock"), minMargin: +f.get("minMargin"), waCountry: f.get("waCountry").replace(/\D/g, ""), relay: f.get("relay").trim() || DEFAULT_RELAY }); stopScanner(); listenScanner(); save(); render(); toast("Ajustes guardados"); };
   app.querySelectorAll("[data-perm]").forEach(i => i.onchange = (e) => { const [k, key] = e.target.dataset.perm.split("|"); setPerm(k, key, e.target.checked); });
-  app.querySelectorAll("[data-role]").forEach(s => s.onchange = (e) => { userById(e.target.dataset.role).role = e.target.value; save(); render(); toast("Rol actualizado"); });
+  app.querySelectorAll("[data-role]").forEach(s => s.onchange = (e) => { if (CLOUD) return act(() => sbq(sb.from("profiles").update({ role: e.target.value }).eq("id", e.target.dataset.role)), "Rol actualizado"); userById(e.target.dataset.role).role = e.target.value; save(); render(); toast("Rol actualizado"); });
 }
 document.addEventListener("click", (e) => {
-  const t = e.target.closest("[data-act],[data-add],[data-qty],[data-disc],[data-pay],[data-inv],[data-rep],[data-reptab],[data-photo],[data-addcat],[data-delcat],[data-lim],[data-toggle],[data-partner],[data-editpartner],[data-delpartner],[data-assign],[data-editprod],[data-sale-detail],[data-spk],[data-close]");
+  const t = e.target.closest("[data-act],[data-add],[data-qty],[data-disc],[data-pay],[data-inv],[data-rep],[data-reptab],[data-photo],[data-addcat],[data-delcat],[data-lim],[data-toggle],[data-partner],[data-editpartner],[data-delpartner],[data-assign],[data-editprod],[data-sale-detail],[data-spk],[data-setpin],[data-close]");
   if (!t) { if (e.target.classList.contains("overlay")) { closeModal(); if (S.cartOpen) render(); } return; }
   if (t.dataset.close != null) { if (t.closest(".cart-screen")) S.cartOpen = false; closeModal(); if (S.cartOpen) render(); return; }
   if (t.dataset.editprod) return editProdModal(t.dataset.editprod);
+  if (t.dataset.setpin) return pinSetModal(t.dataset.setpin);
   if (t.dataset.saleDetail) return saleDetailModal(t.dataset.saleDetail);
   if (t.dataset.spk) { S.spk = +t.dataset.spk; try { localStorage.setItem("aris-spk", S.spk); } catch {} return render(); }
   if (t.dataset.partner) { S.partner = t.dataset.partner; return render(); }
   if (t.dataset.editpartner) return partnerModal(t.dataset.editpartner);
+  if (t.dataset.delpartner && CLOUD) { const id = t.dataset.delpartner; if (S.partner === id) S.partner = "all"; return act(() => sbq(sb.from("partners").update({ active: false }).eq("id", id)), "Socio eliminado").then(ok => ok && closeModal()); }
   if (t.dataset.delpartner) { DB.partners = DB.partners.filter(p => p.id !== t.dataset.delpartner); if (S.partner === t.dataset.delpartner) S.partner = "all"; save(); closeModal(); return render(); }
   if (t.dataset.add) return addToCart(t.dataset.add);
   if (t.dataset.qty) { const [v, d] = t.dataset.qty.split("|"); return setQty(v, +d); }
@@ -1025,9 +1294,15 @@ document.addEventListener("click", (e) => {
   if (t.dataset.rep) { S.repRange = t.dataset.rep; return render(); }
   if (t.dataset.reptab) { S.repTab = t.dataset.reptab; return render(); }
   if (t.dataset.addcat) return addCatModal(t.dataset.addcat);
+  if (t.dataset.delcat && CLOUD) { const [k, i] = t.dataset.delcat.split("|"), it = DB[k][+i]; if (!confirm(`¿Quitar "${k === "discountCodes" ? it.code : it}" de la lista?`)) return;
+    return act(() => sbq(k === "discountCodes" ? sb.from("discount_codes").update({ active: false }).eq("code", it.code) : sb.from(CAT_TABLE[k]).update({ active: false }).eq("name", it)), "Quitado de la lista"); }
   if (t.dataset.delcat) { const [k, i] = t.dataset.delcat.split("|"); DB[k].splice(+i, 1); save(); return render(); }
-  if (t.dataset.lim) { if (me.role !== "propietaria") return; const [k, d] = t.dataset.lim.split("|"); if (k === "propietaria") return; DB.roles[k].maxDisc = Math.min(100, Math.max(0, DB.roles[k].maxDisc + +d)); save(); return render(); }
-  if (t.dataset.photo) { const inp = document.createElement("input"); inp.type = "file"; inp.accept = "image/*"; inp.onchange = async () => { const f = inp.files[0]; if (!f) return; try { prodById(t.dataset.photo).photo = await ART.compress(f); save(); render(); toast("Foto actualizada"); } catch { toast("No se pudo leer la imagen", true); } }; inp.click(); return; }
+  if (t.dataset.lim) { if (me.role !== "propietaria") return; const [k, d] = t.dataset.lim.split("|"); if (k === "propietaria") return; DB.roles[k].maxDisc = Math.min(100, Math.max(0, DB.roles[k].maxDisc + +d));
+    if (CLOUD) return saveRole(k); save(); return render(); }
+  if (t.dataset.photo) { const inp = document.createElement("input"); inp.type = "file"; inp.accept = "image/*"; inp.onchange = async () => { const f = inp.files[0]; if (!f) return;
+      if (CLOUD) { const pid = t.dataset.photo; return act(async () => { const path = await uploadImg("product-photos", `${pid}/${Date.now()}.jpg`, await ART.compress(f, 900)); await sbq(sb.from("products").update({ photo_path: path, updated_at: new Date().toISOString() }).eq("id", pid)); }, "Foto actualizada"); }
+      try { prodById(t.dataset.photo).photo = await ART.compress(f); save(); render(); toast("Foto actualizada"); } catch { toast("No se pudo leer la imagen", true); } }; inp.click(); return; }
+  if (t.dataset.toggle && CLOUD) { const u = userById(t.dataset.toggle); if (!u.active && DB.users.filter(x => x.active).length >= 3) return toast("Ya hay 3 usuarios activos. Desactivá uno primero.", true); return act(() => sbq(sb.from("profiles").update({ active: !u.active }).eq("id", u.id)), u.active ? `${u.name} desactivada` : `${u.name} activada`); }
   if (t.dataset.toggle) { const u = userById(t.dataset.toggle); u.active = !u.active; save(); return render(); }
   const a = t.dataset.act;
   if (a === "opencart") { S.cartOpen = true; render(); }
@@ -1036,13 +1311,15 @@ document.addEventListener("click", (e) => {
   else if (a === "clearcart") { S.cart = []; S.disc = null; render(); }
   else if (a === "nodisc") { e.preventDefault(); S.disc = null; render(); }
   else if (a === "code") codeModal();
-  else if (a === "pin") pinModal((pct, auth) => { S.disc = { type: "pin", pct, by: auth.id }; render(); toast(`${pct} % autorizado por ${auth.name}`); });
+  else if (a === "pin") pinModal((pct, auth, pin) => { S.disc = { type: "pin", pct, by: auth.id, byName: auth.name, pin }; render(); toast(`${pct} % autorizado por ${auth.name}`); });
   else if (a === "cobrar") cobrar();
   else if (a === "print") printTicket(t.dataset.sale);
   else if (a === "wa") waSend(t.dataset.sale);
+  else if (a === "void") voidModal(t.dataset.sale);
   else if (a === "reticket") { const x = DB.sales.find(s => s.id === t.dataset.sale); if (x) showTicket(x); }
   else if (a === "share") shareTicket(t.dataset.sale);
   else if (a === "newpartner") partnerModal();
+  else if (a === "delprod" && CLOUD) { if (confirm("¿Eliminar este producto?")) act(() => sbq(sb.from("products").update({ active: false }).eq("id", t.dataset.pid)), "Producto eliminado").then(ok => ok && closeModal()); }
   else if (a === "delprod") { if (confirm("¿Eliminar este producto?")) { DB.products = DB.products.filter(x => x.id !== t.dataset.pid); save(); closeModal(); render(); toast("Producto eliminado"); } }
   else if (a === "labels") labelsModal();
   else if (a === "pair") pairModal();
@@ -1057,12 +1334,12 @@ document.addEventListener("click", (e) => {
   else if (a === "csv") exportCSV();
   else if (a === "reset") { if (confirm("¿Volver a los datos de ejemplo? Se borran las ventas registradas en este demo.")) reset(); }
 });
-window.addEventListener("hashchange", () => { if (scannerParams()) return startScannerMode(); if (me) render(); });
+window.addEventListener("hashchange", () => { if (scannerParams()) return startScannerMode(); if (me) { render(); if (CLOUD) cloudSoon(300); } });
 // Sincronía entre pestañas/ventanas del mismo navegador (en producción: Supabase Realtime)
-window.addEventListener("storage", (e) => { if (e.key === KEY) { load(); if (me) { me = DB.users.find(u => u.id === me.id) || me; render(); } } });
+window.addEventListener("storage", (e) => { if (!CLOUD && e.key === KEY) { load(); if (me) { me = DB.users.find(u => u.id === me.id) || me; render(); } } });
 // Simulación de ventas desde "otro dispositivo"
 setInterval(() => {
-  if (!S.sim || !me) return;
+  if (CLOUD || !S.sim || !me) return;
   const seller = DB.users.filter(u => u.id !== me.id && u.active); const u = seller[Math.floor(Math.random() * seller.length)];
   const avail = DB.products.flatMap(p => p.variants.filter(v => v.stock > 0).map(v => ({ p, v }))); if (!avail.length || !u) return;
   const { p, v } = avail[Math.floor(Math.random() * avail.length)];
@@ -1130,7 +1407,9 @@ function assignCodeModal(code) {
   modal(`<div class="modal-h"><h3>Código nuevo</h3><button class="btn icon ghost" data-close>${I.x}</button></div>
     <p class="hint" style="margin:0">El código <b>${esc(code)}</b> no está en el sistema. Si es el código de fábrica de una prenda, asignalo a su variante y la próxima vez se reconoce sola.</p>
     <form id="f" class="form"><div class="field full"><label>Asignar a</label><select name="vid">${opts}</select></div><button class="btn dark lg full">Asignar y agregar</button></form>`, f => {
-    const r = varById(f.get("vid")); r.v.code = code; save(); toast(`Código asignado a ${r.p.name} ${r.v.size}`);
+    const r = varById(f.get("vid"));
+    if (CLOUD) return act(() => sbq(sb.from("variants").update({ barcode: code }).eq("id", r.v.id)), `Código asignado a ${r.p.name} ${r.v.size}`).then(ok => { if (ok && role().views.includes("venta")) { if (view() !== "venta") location.hash = "venta"; setTimeout(() => addToCart(r.v.id, true), 0); } return ok; });
+    r.v.code = code; save(); toast(`Código asignado a ${r.p.name} ${r.v.size}`);
     if (role().views.includes("venta")) { if (view() !== "venta") location.hash = "venta"; setTimeout(() => addToCart(r.v.id, true), 0); }
   });
 }
@@ -1162,7 +1441,7 @@ async function camScanModal() {
 /* ---------- Celular como escáner de la computadora ---------- */
 const SCAN_KEY = "aris-scanner-topic";
 const relay = () => String(DB.settings.relay || DEFAULT_RELAY).replace(/\/$/, "");
-let scanES = null, phoneSeen = 0;
+let scanES = null, scanCh = null, phoneSeen = 0;
 const phoneOnline = () => Date.now() - phoneSeen < 75000;
 function pairTopic(create) {
   let t = localStorage.getItem(SCAN_KEY);
@@ -1170,12 +1449,18 @@ function pairTopic(create) {
   return t;
 }
 function listenScanner() {
-  const t = pairTopic(false); if (!t || !me || scanES || !window.EventSource) return;
+  const t = pairTopic(false); if (!t || !me) return;
+  if (CLOUD) {
+    if (scanCh) return;
+    scanCh = sb.channel("scan-" + t, { config: { broadcast: { self: false } } }).on("broadcast", { event: "m" }, ({ payload }) => payload && onPhoneMsg(payload)).subscribe();
+    return;
+  }
+  if (scanES || !window.EventSource) return;
   scanES = new EventSource(`${relay()}/${t}/sse`);
   scanES.onmessage = (e) => { let d, m; try { d = JSON.parse(e.data); } catch { return; } if (d.event && d.event !== "message") return; try { m = JSON.parse(d.message); } catch { return; } onPhoneMsg(m); };
   scanES.onerror = () => { if ($("#pairStatus") && !phoneOnline()) $("#pairStatus").innerHTML = `<div class="pair-wait">Reconectando con el servidor…</div>`; };
 }
-function stopScanner() { if (scanES) { scanES.close(); scanES = null; } }
+function stopScanner() { if (scanES) { scanES.close(); scanES = null; } if (scanCh) { sb.removeChannel(scanCh); scanCh = null; } }
 function onPhoneMsg(m) {
   const was = phoneOnline(); phoneSeen = Date.now();
   if (!was) { updateScanBadge(); if (!$("#pairStatus")) toast("Celular conectado como escáner"); }
@@ -1187,7 +1472,7 @@ setInterval(updateScanBadge, 15000);
 const pairStatusHTML = () => phoneOnline() ? `<div class="pair-ok">${I.phone} Celular conectado · listo para escanear</div>` : `<div class="pair-wait"><span class="spinner"></span> Esperando al celular…</div>`;
 async function pairModal() {
   const t = pairTopic(true); listenScanner();
-  const url = `${location.origin}${location.pathname}#escaner=${t}${relay() !== DEFAULT_RELAY ? "&r=" + encodeURIComponent(relay()) : ""}`;
+  const url = `${location.origin}${location.pathname}${location.search}#escaner=${t}${!CLOUD && relay() !== DEFAULT_RELAY ? "&r=" + encodeURIComponent(relay()) : ""}`;
   S.pairUrl = url;
   await lib("vendor/qrcode.js");
   const qr = qrcode(0, "M"); qr.addData(url); qr.make();
@@ -1224,7 +1509,14 @@ async function startScannerMode() {
     <div class="scan-foot"><button class="btn block" id="scPause">Pausar cámara</button></div>
   </div>`;
   const status = (txt, ok) => { const el = $("#scStatus"); if (el) { el.textContent = txt; el.className = ok ? "sc-ok" : "sc-wait"; } };
-  const send = async (msg) => { const r = await fetch(`${P.relay}/${P.topic}`, { method: "POST", body: JSON.stringify(msg) }); if (!r.ok) throw new Error("HTTP " + r.status); };
+  let send = async (msg) => { const r = await fetch(`${P.relay}/${P.topic}`, { method: "POST", body: JSON.stringify(msg) }); if (!r.ok) throw new Error("HTTP " + r.status); };
+  if (CLOUD) {
+    // Canal en tiempo real de Supabase: el celular no necesita iniciar sesión, solo conocer el código del vínculo
+    const ch = sb.channel("scan-" + P.topic, { config: { broadcast: { self: false, ack: true } } });
+    const ready = new Promise((res, rej) => { ch.subscribe(st => { if (st === "SUBSCRIBED") res(); else if (st === "CHANNEL_ERROR" || st === "TIMED_OUT") rej(new Error(st)); }); setTimeout(() => rej(new Error("timeout")), 12000); });
+    ready.catch(() => {});
+    send = async (msg) => { await ready; const r = await ch.send({ type: "broadcast", event: "m", payload: msg }); if (r !== "ok") throw new Error(String(r)); };
+  }
   const hello = () => send({ t: "hello", at: Date.now() }).then(() => status("Conectado · listo para escanear", true), () => status("Sin conexión con el servidor. Revisá internet.", false));
   hello(); scanMode.hb = setInterval(hello, 30000);
   const onCode = async (code) => {
@@ -1268,11 +1560,27 @@ async function printLabels(partner, pid, mode) {
 }
 
 /* ---------- Inicio ---------- */
-load();
+if (CLOUD) DB = emptyDB(); else load();
 if (scannerParams()) startScannerMode();
-else {
+else if (CLOUD) {
+  bootScreen("Conectando…");
+  sb.auth.onAuthStateChange((ev) => {
+    if (ev === "PASSWORD_RECOVERY") setTimeout(newPasswordModal, 300);
+    if (ev === "SIGNED_OUT" && me) { me = null; cloudUnsubscribe(); stopScanner(); DB = emptyDB(); render(); }
+  });
+  sb.auth.getSession().then(({ data }) => { if (data && data.session) cloudStart(data.session.user); else render(); }, () => render());
+} else {
   const sid = sessionStorage.getItem(SESSION); if (sid) me = DB.users.find(u => u.id === sid && u.active) || null;
   render(); listenScanner();
+}
+function newPasswordModal() {
+  modal(`<div class="modal-h"><h3>Contraseña nueva</h3><button class="btn icon ghost" data-close>${I.x}</button></div>
+    <form id="f" class="form"><div class="field full"><label>Contraseña nueva (mínimo 6)</label><input name="p" type="password" minlength="6" autocomplete="new-password" required></div>
+    <button class="btn dark lg full">Guardar contraseña</button></form>`, async f => {
+    const { error } = await sb.auth.updateUser({ password: f.get("p") });
+    if (error) { toast(errMsg(error), true); return false; }
+    toast("Contraseña actualizada");
+  });
 }
 window.addEventListener("afterprint", () => { $("#print-root").innerHTML = ""; });
 })();
