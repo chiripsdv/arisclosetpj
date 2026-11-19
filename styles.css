@@ -800,3 +800,10 @@ body.is-busy::before{content:"";position:fixed;top:0;left:0;right:0;height:3px;z
 .login-card .err{color:var(--red);font-size:13px;text-align:center}
 form[data-busy] button[type=submit],form[data-busy] button:not([type]){opacity:.6}
 .boot .spinner{width:22px;height:22px;border-width:2.5px}
+
+/* Login: tarjeta más despegada del fondo */
+.login{background:radial-gradient(120% 85% at 50% 0%,#F9E3E6 0%,#F1E6E1 50%,#E9E1DB 100%)}
+.login-card{background:#fff;border:1px solid rgba(255,255,255,.9);overflow:hidden;
+  box-shadow:0 1px 0 rgba(255,255,255,.9) inset,0 2px 4px rgba(60,20,25,.06),0 12px 24px -6px rgba(120,40,50,.16),0 40px 80px -20px rgba(120,30,45,.30),0 0 0 6px rgba(255,255,255,.35)}
+.login-card::before{content:"";position:absolute;left:0;right:0;top:0;height:4px;background:linear-gradient(90deg,#F2B8C0,var(--red),#F2B8C0)}
+@media (max-width:520px){.login-card{box-shadow:0 2px 4px rgba(60,20,25,.06),0 16px 40px -10px rgba(120,30,45,.28),0 0 0 5px rgba(255,255,255,.35)}}
