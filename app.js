@@ -475,9 +475,9 @@ function panelView() {
   const pmax = Math.max(1, ...byPartner.map(x => x.t));
   return topbar(`${greet()}, ${esc(me.name.split(" ")[0])}`, S.partner === "all" ? fmtDL(new Date()) : `${esc(partnerById(S.partner).name)} · ${fmtDL(new Date())}`, `
     ${!mine && !CLOUD ? `<label class="toggle hide-m" title="Genera una venta de otro dispositivo cada pocos segundos"><input type="checkbox" id="simToggle" ${S.sim ? "checked" : ""}> <span class="tl-long">Simular ventas de otros dispositivos</span><span class="tl-short">Simular</span></label>` : ""}
-    <a href="#venta" class="btn red">${I.plus}<span class="hide-m">Nueva venta</span></a>`) + `
+    ${spkRangeSeg("hide-m")}<a href="#venta" class="btn red">${I.plus}<span class="hide-m">Nueva venta</span></a>`) + `
   <div class="content">
-    <div class="panel-tools">${partnerSeg()}${spkRangeSeg()}</div>
+    ${partnerSeg() ? `<div class="panel-tools">${partnerSeg()}${spkRangeSeg("hide-d")}</div>` : `<div class="panel-tools hide-d">${spkRangeSeg()}</div>`}
     <section class="kpis">
       <div class="card kpi hero k1"><div class="lbl">Ventas de hoy<span class="ico">${I.trend}</span></div><div class="val">${money(total)}</div><div class="foot">${lastWeek ? `${deltaChip(total, lastWeek)} vs. hace una semana` : "Sin referencia semanal"}</div>${spark(W.map(d => d.total), WD)}</div>
       <div class="card kpi k2"><div class="lbl">Tickets<span class="ico">${I.ticket}</span></div><div class="val">${s.length}</div><div class="foot">${deltaChip(s.length, W[0].n)} Promedio ${money(s.length ? total / s.length : 0)}</div>${spark(W.map(d => d.n), WD, "int")}</div>
@@ -589,7 +589,7 @@ function spkMove(e) {
 document.addEventListener("mousemove", (e) => { const on = document.querySelector(".spk.on"); const box = e.target.closest && e.target.closest(".spk"); if (on && on !== box) on.classList.remove("on"); if (box) spkMove(e); });
 document.addEventListener("touchstart", (e) => { document.querySelectorAll(".spk.on").forEach(x => { if (!x.contains(e.target)) x.classList.remove("on"); }); if (e.target.closest && e.target.closest(".spk")) spkMove(e); }, { passive: true });
 document.addEventListener("touchmove", (e) => { if (e.target.closest && e.target.closest(".spk")) spkMove(e); }, { passive: true });
-const spkRangeSeg = () => `<div class="seg spk-seg" role="group" aria-label="Período de las tendencias"><span class="hint">Tendencia</span>${[7, 30].map(n => `<button data-spk="${n}" class="${S.spk === n ? "on" : ""}">${n} días</button>`).join("")}</div>`;
+const spkRangeSeg = (cls = "") => `<div class="seg spk-seg ${cls}" role="group" aria-label="Período de las tendencias"><span class="hint hide-m">Tendencia</span>${[7, 30].map(n => `<button data-spk="${n}" class="${S.spk === n ? "on" : ""}">${n} días</button>`).join("")}</div>`;
 const last7 = () => lastN(7);
 const deltaChip = (now, before) => { if (!before) return ""; const d = Math.round((now - before) / before * 100); return `<span class="chip ${d >= 0 ? "green" : "red"}">${d >= 0 ? "↑" : "↓"} ${Math.abs(d)} %</span>`; };
 const discChip = (d) => d ? `<span class="chip red">${d.type === "codigo" ? "Código " + esc(d.code) : d.type === "pin" ? d.pct + " % con PIN" : d.pct + " % manual"}</span>` : `<span class="nodisc" style="color:var(--faint)">—</span>`;
@@ -604,9 +604,9 @@ function myPanelView() {
   const topL = Object.entries(top).sort((a, b) => b[1].q - a[1].q);
   const list = s.slice().sort((a, b) => b.at.localeCompare(a.at));
   const perDay = ws.map(x => x.reduce((a, y) => a + y.items.reduce((b, i) => b + i.qty, 0), 0)), pmax = Math.max(1, ...perDay);
-  return topbar(`${greet()}, ${esc(me.name.split(" ")[0])}`, `Mis ventas · ${fmtDL(new Date())}`, `<a href="#venta" class="btn red">${I.plus}<span class="hide-m">Nueva venta</span></a>`) + `
+  return topbar(`${greet()}, ${esc(me.name.split(" ")[0])}`, `Mis ventas · ${fmtDL(new Date())}`, `${spkRangeSeg("hide-m")}<a href="#venta" class="btn red">${I.plus}<span class="hide-m">Nueva venta</span></a>`) + `
   <div class="content">
-    <div class="panel-tools">${spkRangeSeg()}</div>
+    <div class="panel-tools hide-d">${spkRangeSeg()}</div>
     <section class="kpis">
       <div class="card kpi hero k1"><div class="lbl">Vendido hoy<span class="ico">${I.trend}</span></div><div class="val">${money(total)}</div><div class="foot">${s.length} ${s.length === 1 ? "venta" : "ventas"}</div>${spark(SD.map(d => mine(d).reduce((a, y) => a + y.total, 0)), SD)}</div>
       <div class="card kpi k2"><div class="lbl">Unidades hoy<span class="ico">${I.inventario}</span></div><div class="val">${units}</div><div class="foot">${s.length ? (units / s.length).toFixed(1) + " por venta" : "Todavía sin ventas"}</div>${spark(SD.map(d => mine(d).reduce((a, y) => a + y.items.reduce((b, i) => b + i.qty, 0), 0)), SD, "int")}</div>

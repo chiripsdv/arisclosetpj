@@ -894,3 +894,4 @@ svg.li{width:20px;height:20px;flex-shrink:0;stroke-width:1.9}
 .login-card.green #lgCancel{color:#1E7A45;border-color:#1E7A45;box-shadow:0 8px 18px -10px rgba(30,122,69,.35)}
 .login-card.green #lgCancel:hover{background:#F2FAF5}
 .login-card.bye{text-align:center;gap:16px}.login-card.bye p{font-size:14px}#byeBack{color:var(--red);border:1.5px solid var(--red);background:#fff}
+.topbar .spk-seg{margin:0 4px 0 0}
