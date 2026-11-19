@@ -87,6 +87,7 @@ function logout() {
   if (CLOUD) { cloudUnsubscribe(); CL.pending = null; DB = emptyDB(); sb.auth.signOut().catch(() => {}); }
   render();
 }
+const initials = (n) => { const w = String(n || "").trim().split(/\s+/).filter(Boolean); return ((w[0] || "?")[0] + (w.length > 1 ? w[w.length > 2 ? 2 : 1][0] : (w[0] || "")[1] || "")).toUpperCase(); };
 const avatarCls = (id) => { const r = userById(id).role; return r === "propietaria" ? "red" : r === "vendedor" ? "grey" : ""; };
 /* ---------- Nube (Supabase) ----------
    Con config.js la app trabaja contra la base de datos real: login con correo,
@@ -95,19 +96,24 @@ const CFG = window.ARIS_CONFIG || {};
 const CLOUD = !!(CFG.url && CFG.anonKey && window.supabase) && !/[?&]demo\b/.test(location.search);
 const sb = CLOUD ? window.supabase.createClient(CFG.url, CFG.anonKey, { auth: { persistSession: true, autoRefreshToken: true, storageKey: "aris-auth" } }) : null;
 const CL = { catId: {}, catName: {}, brandId: {}, brandName: {}, ecatId: {}, ecatName: {}, pending: null, rt: null, rtT: null, newSales: [] };
+// Usuarios con nombre corto (mvaldivia): por dentro Supabase usa mvaldivia@<dominio>
+const UDOM = String(CFG.userDomain || "ariscloset.app").toLowerCase();
+const toEmail = (u) => { u = String(u || "").trim().toLowerCase(); return u.includes("@") ? u : `${u}@${UDOM}`; };
+const userOf = (email) => { const e = String(email || "").toLowerCase(); return e.endsWith("@" + UDOM) ? e.slice(0, -UDOM.length - 1) : e; };
 const sbq = async (p) => { const { data, error } = await p; if (error) throw error; return data; };
 // Trae todas las filas aunque pasen del límite de 1000 por consulta
 async function sbAll(build) { const out = []; for (let from = 0; ; from += 1000) { const d = await sbq(build().range(from, from + 999)); out.push(...d); if (d.length < 1000) return out; } }
 function errMsg(e) {
   const m = String((e && (e.message || e.error_description || e.msg)) || e || "");
-  if (/invalid login credentials/i.test(m)) return "Correo o contraseña incorrectos";
+  if (/invalid login credentials/i.test(m)) return "Usuario o contraseña incorrectos";
+  if (/email address .* is invalid|invalid email|validate email/i.test(m)) return "Supabase no aceptó ese nombre de usuario. Probá solo con letras y números.";
   if (/email not confirmed/i.test(m)) return "Falta confirmar el correo (revisá la bandeja de entrada)";
   if (/failed to fetch|networkerror|load failed/i.test(m)) return "Sin conexión a internet. Intentá de nuevo.";
   if (/row-level security|permission denied/i.test(m)) return "Tu rol no tiene permiso para hacer esto";
   if (/variants_barcode_key|barcode/i.test(m) && /duplicate|unique/i.test(m)) return "Ese código de barras ya lo usa otra prenda";
   if (/variants_product_id_size_color_key/i.test(m)) return "Hay dos variantes con la misma talla y color";
   if (/duplicate key|already exists|unique/i.test(m)) return "Ya existe un registro con ese nombre";
-  if (/already registered|user_already_exists/i.test(m)) return "Ese correo ya tiene una cuenta";
+  if (/already registered|user_already_exists/i.test(m)) return "Ese usuario ya existe";
   if (/signups? not allowed|signup.*disabled/i.test(m)) return "Supabase no permite registros desde la app: creá el usuario en Supabase (Authentication → Add user) y después activalo aquí";
   if (/rate limit/i.test(m)) return "Demasiados intentos seguidos. Esperá unos minutos.";
   if (/password should be at least/i.test(m)) return "La contraseña debe tener al menos 6 caracteres";
@@ -212,7 +218,7 @@ function cloudPending() {
   app.innerHTML = `<div class="login">${loginPattern()}<div class="login-card">
     <div class="login-logo"><img src="icons/logo-t.png" alt="Ari's Closet"></div>
     <h1>Cuenta pendiente</h1>
-    <p>${p.name ? esc(p.name) + ", tu" : "Tu"} cuenta${p.email ? " <b>" + esc(p.email) + "</b>" : ""} todavía no está activa. La propietaria tiene que activarla en <b>Usuarios</b>.</p>
+    <p>${p.name ? esc(p.name) + ", tu" : "Tu"} cuenta${p.email ? " <b>" + esc(userOf(p.email)) + "</b>" : ""} todavía no está activa. La propietaria tiene que activarla en <b>Usuarios</b>.</p>
     <button class="btn dark lg block" id="pendRetry">Ya me activaron</button>
     <button class="btn ghost block" data-act="logout">Salir</button>
   </div></div>`;
@@ -310,7 +316,7 @@ function render() {
       <div class="side-foot">
         ${installHTML()}
         <div class="cashbox" data-tip="${money(todayTotal)}"><span class="cb-ico">${I.cash}</span><div class="cb-body"><small>${can("seeAllSales") ? "Caja de hoy" : "Mis ventas de hoy"}</small><b>${money(todayTotal)}</b><small>${todaySales.length} tickets · ${todaySales.reduce((a, x) => a + x.items.reduce((b, i) => b + i.qty, 0), 0)} uds.</small></div></div>
-        <div class="me"><span class="avatar ${me.role === "propietaria" ? "red" : ""}" title="${esc(me.name)}">${esc(me.name.slice(0, 2).toUpperCase())}</span><div><b>${esc(me.name)}</b><span>${esc(role().label)}</span></div><button title="Salir" data-act="logout">${I.out}</button></div>
+        <div class="me"><span class="avatar ${me.role === "propietaria" ? "red" : ""}" title="${esc(me.name)}">${esc(initials(me.name))}</span><div><b>${esc(me.name)}</b><span>${esc(role().label)}</span></div><button title="Salir" data-act="logout">${I.out}</button></div>
       </div>
     </aside>
     <div class="main">
@@ -372,8 +378,8 @@ function loginView(err) {
   if (CLOUD) return `<div class="login">${loginPattern()}<form class="login-card" id="loginForm">
     <div class="login-logo"><img src="icons/logo-t.png" alt="Ari's Closet"></div>
     <h1>Bienvenida</h1>
-    <p>Entrá con tu correo para abrir caja</p>
-    <div class="field"><label for="lgE">Correo</label><input id="lgE" name="e" type="email" autocomplete="username" required></div>
+    <p>Entrá con tu usuario para abrir caja</p>
+    <div class="field"><label for="lgE">Usuario</label><input id="lgE" name="e" type="text" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="Ej. mvaldivia" required></div>
     <div class="field"><label for="lgP">Contraseña</label><input id="lgP" name="p" type="password" autocomplete="current-password" required></div>
     ${err ? `<div class="err">${esc(err)}</div>` : ""}
     <button class="btn dark lg block" type="submit">Entrar</button>
@@ -396,12 +402,13 @@ function bindLogin() {
     $("#loginForm").onsubmit = async (e) => {
       e.preventDefault(); const f = new FormData(e.target), btn = e.target.querySelector("[type=submit]");
       btn.disabled = true; btn.textContent = "Entrando…";
-      const { data, error } = await sb.auth.signInWithPassword({ email: String(f.get("e")).trim(), password: f.get("p") });
+      const { data, error } = await sb.auth.signInWithPassword({ email: toEmail(f.get("e")), password: f.get("p") });
       if (error) { btn.disabled = false; btn.textContent = "Entrar"; return toast(errMsg(error), true); }
       cloudStart(data.user);
     };
     $("#lgForgot").onclick = async () => {
-      const email = $("#lgE").value.trim(); if (!email) { $("#lgE").focus(); return toast("Escribí tu correo primero", true); }
+      const email = $("#lgE").value.trim();
+      if (!email.includes("@")) return toast("Pedile a la propietaria que te asigne una contraseña nueva (Usuarios → Editar)");
       const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname });
       toast(error ? errMsg(error) : "Te enviamos un correo para crear una contraseña nueva", !!error);
     };
@@ -429,7 +436,7 @@ function panelView() {
   const hmax = Math.max(1, ...hours);
   const byPartner = DB.partners.map(p => { const ps = salesOf(t).map(x => scopeSale(x, p.id)).filter(Boolean); return { p, t: ps.reduce((a, x) => a + x.total, 0), q: ps.reduce((a, x) => a + x.items.reduce((b, i) => b + i.qty, 0), 0) }; });
   const pmax = Math.max(1, ...byPartner.map(x => x.t));
-  return topbar(`${greet()}, ${esc(me.name)}`, S.partner === "all" ? fmtDL(new Date()) : `${esc(partnerById(S.partner).name)} · ${fmtDL(new Date())}`, `
+  return topbar(`${greet()}, ${esc(me.name.split(" ")[0])}`, S.partner === "all" ? fmtDL(new Date()) : `${esc(partnerById(S.partner).name)} · ${fmtDL(new Date())}`, `
     ${!mine && !CLOUD ? `<label class="toggle hide-m" title="Genera una venta de otro dispositivo cada pocos segundos"><input type="checkbox" id="simToggle" ${S.sim ? "checked" : ""}> <span class="tl-long">Simular ventas de otros dispositivos</span><span class="tl-short">Simular</span></label>` : ""}
     <a href="#venta" class="btn red">${I.plus}<span class="hide-m">Nueva venta</span></a>`) + `
   <div class="content">
@@ -560,7 +567,7 @@ function myPanelView() {
   const topL = Object.entries(top).sort((a, b) => b[1].q - a[1].q);
   const list = s.slice().sort((a, b) => b.at.localeCompare(a.at));
   const perDay = ws.map(x => x.reduce((a, y) => a + y.items.reduce((b, i) => b + i.qty, 0), 0)), pmax = Math.max(1, ...perDay);
-  return topbar(`${greet()}, ${esc(me.name)}`, `Mis ventas · ${fmtDL(new Date())}`, `<a href="#venta" class="btn red">${I.plus}<span class="hide-m">Nueva venta</span></a>`) + `
+  return topbar(`${greet()}, ${esc(me.name.split(" ")[0])}`, `Mis ventas · ${fmtDL(new Date())}`, `<a href="#venta" class="btn red">${I.plus}<span class="hide-m">Nueva venta</span></a>`) + `
   <div class="content">
     <div class="panel-tools">${spkRangeSeg()}</div>
     <section class="kpis">
@@ -1115,11 +1122,11 @@ function partnerModal(id) {
 /* ---------- Usuarios ---------- */
 function usersView() {
   return topbar("Usuarios", `${DB.users.filter(u => u.active).length} de 3 activos`, DB.users.filter(u => u.active).length < 3 ? `<button class="btn dark" data-act="newuser">${I.plus}<span class="hide-m">Nuevo usuario</span></button>` : "") + `
-  <div class="content"><section class="card"><div class="tbl-wrap"><table><thead><tr><th>Usuario</th><th>Correo</th><th>Rol</th><th>Límite desc.</th><th>PIN</th><th>Estado</th><th></th></tr></thead><tbody>
-  ${DB.users.map(u => `<tr><td><span class="who"><span class="avatar ${u.role === "propietaria" ? "red" : u.role === "vendedor" ? "grey" : ""}">${esc(u.name.slice(0, 2).toUpperCase())}</span><b>${esc(u.name)}</b></span></td><td style="color:var(--muted)">${esc(u.email)}</td>
+  <div class="content"><section class="card"><div class="tbl-wrap"><table><thead><tr><th>Nombre</th><th>Usuario</th><th>Rol</th><th>Límite desc.</th><th>PIN</th><th>Estado</th><th></th></tr></thead><tbody>
+  ${DB.users.map(u => `<tr><td><span class="who"><span class="avatar ${u.role === "propietaria" ? "red" : u.role === "vendedor" ? "grey" : ""}">${esc(initials(u.name))}</span><b>${esc(u.name)}</b></span></td><td style="color:var(--muted)">${esc(CLOUD ? userOf(u.email) : u.email)}</td>
     <td>${u.id === me.id ? `<span class="chip">${esc(DB.roles[u.role].label)}</span>` : `<select data-role="${u.id}" style="height:32px;border:1px solid var(--line);border-radius:8px;padding:0 8px">${Object.entries(DB.roles).map(([k, r]) => `<option value="${k}" ${u.role === k ? "selected" : ""}>${esc(r.label)}</option>`).join("")}</select>`}</td>
     <td>${DB.roles[u.role] ? DB.roles[u.role].maxDisc : 0} %</td><td>${u.active && DB.roles[u.role] && DB.roles[u.role].maxDisc > 0 ? `<button class="btn sm ghost" data-setpin="${u.id}">${I.lock} Definir</button>` : `<span class="hint">—</span>`}</td><td><span class="chip ${u.active ? "green" : "red"}">${u.active ? "Activo" : "Inactivo"}</span></td>
-    <td class="r">${u.id !== me.id ? `<button class="btn sm" data-toggle="${u.id}">${u.active ? "Desactivar" : "Activar"}</button>` : `<span class="hint">vos</span>`}</td></tr>`).join("")}
+    <td class="r"><span style="display:inline-flex;gap:6px;justify-content:flex-end">${CLOUD ? `<button class="btn sm ghost" data-edituser="${u.id}">${I.edit} Editar</button>` : ""}${u.id !== me.id ? `<button class="btn sm" data-toggle="${u.id}">${u.active ? "Desactivar" : "Activar"}</button>` : `<span class="hint" style="align-self:center">vos</span>`}</span></td></tr>`).join("")}
   </tbody></table></div></section>
   ${permsHTML()}
   </div>`;
@@ -1180,7 +1187,7 @@ async function createUserCloud(name, email, password, roleKey) {
   const tmp = window.supabase.createClient(CFG.url, CFG.anonKey, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false, storageKey: "aris-tmp" } });
   const { data, error } = await tmp.auth.signUp({ email, password, options: { data: { name } } });
   if (error) throw error;
-  if (!data.user || (data.user.identities && !data.user.identities.length)) throw new Error("Ese correo ya tiene una cuenta");
+  if (!data.user || (data.user.identities && !data.user.identities.length)) throw new Error("Ese usuario ya existe");
   await sbq(sb.from("profiles").update({ name, role: roleKey, active: true }).eq("id", data.user.id));
   return !data.session;
 }
@@ -1195,14 +1202,34 @@ function pinSetModal(id) {
     userById(id).pin = pin; save(); toast("PIN guardado");
   });
 }
+// Nombre y contraseña de un usuario (solo la propietaria)
+function editUserModal(id) {
+  const u = userById(id);
+  modal(`<div class="modal-h"><h3>Editar usuario</h3><button class="btn icon ghost" data-close>${I.x}</button></div>
+    <form id="f" class="form">
+      <div class="field full"><label>Usuario</label><input value="${esc(userOf(u.email))}" disabled></div>
+      <div class="field full"><label>Nombre completo</label><input name="name" required value="${esc(u.name)}"></div>
+      <div class="field full"><label>Contraseña nueva (opcional, mínimo 6)</label><input name="pass" type="text" minlength="6" autocomplete="new-password" placeholder="Dejala vacía para no cambiarla"></div>
+      <button class="btn dark lg full">Guardar</button>
+    </form>`, f => {
+    const name = f.get("name").trim(), pass = String(f.get("pass") || "");
+    return act(async () => {
+      if (name !== u.name) await sbq(sb.from("profiles").update({ name }).eq("id", id));
+      if (pass) await sbq(sb.rpc("admin_set_password", { p_user: id, p_password: pass }));
+    }, pass ? "Usuario actualizado y contraseña cambiada" : "Usuario actualizado");
+  });
+}
 function newUserModal() {
   modal(`<div class="modal-h"><h3>Nuevo usuario</h3><button class="btn icon ghost" data-close>${I.x}</button></div><form id="f" class="form">
-  <div class="field"><label>Nombre</label><input name="name" required></div><div class="field"><label>Correo</label><input name="email" type="email" required></div>
+  ${CLOUD ? `<div class="field"><label>Usuario</label><input name="user" required autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="Ej. kperez" pattern="[A-Za-z0-9._\\-]{3,30}" title="De 3 a 30 letras o números, sin espacios"></div>
+  <div class="field"><label>Nombre completo</label><input name="name" required placeholder="Ej. Karla Pérez"></div>` : `<div class="field"><label>Nombre</label><input name="name" required></div><div class="field"><label>Correo</label><input name="email" type="email" required></div>`}
   <div class="field"><label>Rol</label><select name="role">${Object.entries(DB.roles).map(([k, r]) => `<option value="${k}">${esc(r.label)}</option>`).join("")}</select></div>
   <div class="field"><label>Contraseña ${CLOUD ? "(mínimo 6)" : ""}</label><input name="pass" value="${CLOUD ? "" : "1234"}" ${CLOUD ? 'minlength="6" autocomplete="new-password"' : ""} required></div>
-  ${CLOUD ? `<p class="hint full" style="margin:0">Pasale el correo y la contraseña a la persona. Puede cambiar la contraseña con “Olvidé mi contraseña”.</p>` : ""}
+  ${CLOUD ? `<p class="hint full" style="margin:0">Pasale el usuario y la contraseña a la persona. Si la olvida, le asignás otra en Editar.</p>` : ""}
   <button class="btn dark lg full">Crear usuario</button></form>`, f => {
-    if (CLOUD) { let confirmMail = false; return act(async () => { confirmMail = await createUserCloud(f.get("name").trim(), String(f.get("email")).trim(), f.get("pass"), f.get("role")); }, "Usuario creado").then(ok => { if (ok && confirmMail) toast("Usuario creado. Tiene que confirmar su correo antes de entrar."); return ok; }); } DB.users.push({ id: uid(), name: f.get("name"), email: f.get("email"), role: f.get("role"), pass: f.get("pass"), pin: "", active: true }); save(); render(); });
+    if (CLOUD) { let confirmMail = false; return act(async () => { const user = String(f.get("user")).trim().toLowerCase();
+      if (!/^[a-z0-9._-]{3,30}$/.test(user)) throw new Error("El usuario lleva de 3 a 30 letras o números, sin espacios");
+      confirmMail = await createUserCloud(f.get("name").trim(), toEmail(user), f.get("pass"), f.get("role")); }, "Usuario creado").then(ok => { if (ok && confirmMail) toast("Usuario creado. Tiene que confirmar su correo antes de entrar."); return ok; }); } DB.users.push({ id: uid(), name: f.get("name"), email: f.get("email"), role: f.get("role"), pass: f.get("pass"), pin: "", active: true }); save(); render(); });
 }
 
 /* ---------- PIN / código ---------- */
@@ -1275,11 +1302,12 @@ function bind() {
   app.querySelectorAll("[data-role]").forEach(s => s.onchange = (e) => { if (CLOUD) return act(() => sbq(sb.from("profiles").update({ role: e.target.value }).eq("id", e.target.dataset.role)), "Rol actualizado"); userById(e.target.dataset.role).role = e.target.value; save(); render(); toast("Rol actualizado"); });
 }
 document.addEventListener("click", (e) => {
-  const t = e.target.closest("[data-act],[data-add],[data-qty],[data-disc],[data-pay],[data-inv],[data-rep],[data-reptab],[data-photo],[data-addcat],[data-delcat],[data-lim],[data-toggle],[data-partner],[data-editpartner],[data-delpartner],[data-assign],[data-editprod],[data-sale-detail],[data-spk],[data-setpin],[data-close]");
+  const t = e.target.closest("[data-act],[data-add],[data-qty],[data-disc],[data-pay],[data-inv],[data-rep],[data-reptab],[data-photo],[data-addcat],[data-delcat],[data-lim],[data-toggle],[data-partner],[data-editpartner],[data-delpartner],[data-assign],[data-editprod],[data-sale-detail],[data-spk],[data-setpin],[data-edituser],[data-close]");
   if (!t) { if (e.target.classList.contains("overlay")) { closeModal(); if (S.cartOpen) render(); } return; }
   if (t.dataset.close != null) { if (t.closest(".cart-screen")) S.cartOpen = false; closeModal(); if (S.cartOpen) render(); return; }
   if (t.dataset.editprod) return editProdModal(t.dataset.editprod);
   if (t.dataset.setpin) return pinSetModal(t.dataset.setpin);
+  if (t.dataset.edituser) return editUserModal(t.dataset.edituser);
   if (t.dataset.saleDetail) return saleDetailModal(t.dataset.saleDetail);
   if (t.dataset.spk) { S.spk = +t.dataset.spk; try { localStorage.setItem("aris-spk", S.spk); } catch {} return render(); }
   if (t.dataset.partner) { S.partner = t.dataset.partner; return render(); }
