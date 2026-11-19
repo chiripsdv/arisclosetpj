@@ -880,3 +880,16 @@ svg.li{width:20px;height:20px;flex-shrink:0;stroke-width:1.9}
 .lg-btns{display:grid;grid-template-columns:1fr 1.6fr;gap:10px}
 .lg-btns .btn:disabled{opacity:.45;cursor:not-allowed}
 .lg-forgot{margin-top:-8px}
+
+/* Login: botones con color de marca y sombra */
+#lgGo{border:0;color:#fff;background:linear-gradient(135deg,#FF3D57 0%,#D6001C 55%,#B00018 100%);box-shadow:0 1px 0 rgba(255,255,255,.25) inset,0 10px 22px -8px rgba(214,0,28,.65),0 3px 6px rgba(214,0,28,.18);transition:transform .2s,box-shadow .2s,filter .2s}
+#lgGo:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 1px 0 rgba(255,255,255,.25) inset,0 16px 28px -10px rgba(214,0,28,.7),0 4px 8px rgba(214,0,28,.2);filter:brightness(1.04)}
+#lgGo:active:not(:disabled){transform:translateY(0);box-shadow:0 6px 14px -6px rgba(214,0,28,.6)}
+#lgGo:disabled{background:linear-gradient(135deg,#E9A3AD,#D98591);box-shadow:none}
+#lgCancel{background:#fff;color:var(--red);border:1.5px solid var(--red);box-shadow:0 8px 18px -10px rgba(214,0,28,.35),0 2px 4px rgba(0,0,0,.04);transition:transform .2s,box-shadow .2s,background .2s}
+#lgCancel:hover{background:#FFF4F5;transform:translateY(-2px);box-shadow:0 12px 22px -10px rgba(214,0,28,.4),0 2px 4px rgba(0,0,0,.05)}
+#lgCancel:active{transform:translateY(0)}
+/* Variante verde (salvia): agregar la clase "green" a .login-card */
+.login-card.green #lgGo{background:linear-gradient(135deg,#43B47A 0%,#1E7A45 100%);box-shadow:0 1px 0 rgba(255,255,255,.25) inset,0 10px 22px -8px rgba(30,122,69,.6),0 3px 6px rgba(30,122,69,.18)}
+.login-card.green #lgCancel{color:#1E7A45;border-color:#1E7A45;box-shadow:0 8px 18px -10px rgba(30,122,69,.35)}
+.login-card.green #lgCancel:hover{background:#F2FAF5}
