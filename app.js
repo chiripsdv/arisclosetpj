@@ -1090,6 +1090,50 @@ function repData() {
   const group = (key) => { const m = {}; lines.forEach(l => { const k = key(l); m[k] = m[k] || { k, q: 0, gross: 0, disc: 0, net: 0, cost: 0, n: new Set() }; const g = m[k]; g.q += l.qty; g.gross += l.gross; g.disc += l.disc; g.net += l.net; g.cost += l.costT; g.n.add(l.sale.id); }); return Object.values(m).map(g => ({ ...g, n: g.n.size, margin: g.net - g.cost, pct: g.net ? (g.net - g.cost) / g.net * 100 : 0 })).sort((a, b) => b.net - a.net); };
   return { days, s, e, total, gross, cost, exp, disc, lines, group };
 }
+// Estado de resultados: cada línea abre su detalle
+const erRow = (k, label, val, style = "") => `<button type="button" class="row er-row" data-erdet="${k}" style="${style}"><span>${label}</span><span class="er-v">${val}${LI("chevron-right", "er-go")}</span></button>`;
+function erDetailModal(k) {
+  const D = repData(), { s, e, lines, total, gross, cost, exp, disc } = D;
+  const per = D.days.length === 1 ? "hoy" : `últimos ${D.days.length} días`;
+  const when = (iso) => `${fmtD(iso)} · ${fmtT(iso)}`;
+  const row = (title, sub, amount, opts = {}) => `<div class="er-item ${opts.sale ? "clickable" : ""}" ${opts.sale ? `data-sale-detail="${opts.sale}"` : ""}><span class="er-main"><b>${title}</b><small>${sub}</small></span><span class="er-amt ${opts.cls || ""}">${amount}</span></div>`;
+  const discTxt = (d) => !d ? "" : d.type === "codigo" ? `código ${esc(d.code)}` : d.type === "pin" ? `con PIN · autorizó ${esc(userById(d.by).name)}` : "manual";
+  const pieces = (x) => x.items.map(i => `${i.qty > 1 ? i.qty + " × " : ""}${esc(i.name)} ${esc(i.size)} ${esc(i.color)}`).join(", ");
+  let title, sum, sumLbl, body;
+  if (k === "gross") {
+    title = "Venta bruta"; sum = gross; sumLbl = `${lines.reduce((a, l) => a + l.qty, 0)} piezas a precio de lista`;
+    body = lines.slice().sort((a, b) => b.sale.at.localeCompare(a.sale.at)).map(l => row(`${l.qty > 1 ? l.qty + " × " : ""}${esc(l.name)} <span class="hint">${esc(l.size)} · ${esc(l.color)}</span>`, `${when(l.sale.at)} · Factura #${l.sale.n} · ${esc(userById(l.sale.seller).name)}`, money(l.gross), { sale: l.sale.id })).join("");
+  } else if (k === "disc") {
+    const ds = s.filter(x => x.discount && x.discount.amount > 0).sort((a, b) => b.at.localeCompare(a.at));
+    title = "Descuentos"; sum = -disc; sumLbl = `${ds.length} ${ds.length === 1 ? "factura" : "facturas"} con descuento`;
+    body = ds.map(x => row(`${x.discount.pct} % · ${pieces(x)}`, `${when(x.at)} · Factura #${x.n} · ${esc(userById(x.seller).name)} · ${discTxt(x.discount)}`, "− " + money(x.discount.amount), { sale: x.id, cls: "red" })).join("");
+  } else if (k === "net") {
+    title = "Venta neta"; sum = total; sumLbl = `${s.length} ${s.length === 1 ? "factura" : "facturas"} · lo que realmente se cobró`;
+    body = s.slice().sort((a, b) => b.at.localeCompare(a.at)).map(x => row(`Factura #${x.n} · ${esc(x.pay)}`, `${when(x.at)} · ${esc(userById(x.seller).name)} · ${x.items.reduce((a, i) => a + i.qty, 0)} piezas${x.discount ? ` · bruto ${money(x.subtotal)} − ${money(x.discount.amount)}` : ""}`, money(x.total), { sale: x.id })).join("");
+  } else if (k === "cost") {
+    const g = {}; lines.forEach(l => { const key = `${l.name}|${l.size}|${l.color}`; g[key] = g[key] || { l, q: 0, c: 0 }; g[key].q += l.qty; g[key].c += l.costT; });
+    const list = Object.values(g).sort((a, b) => b.c - a.c);
+    title = "Costo de mercadería vendida"; sum = -cost; sumLbl = "lo que costaron las piezas vendidas";
+    body = list.map(x => row(`${esc(x.l.name)} <span class="hint">${esc(x.l.size)} · ${esc(x.l.color)}</span>`, `${x.q} ${x.q === 1 ? "pieza" : "piezas"} × costo ${money(x.l.cost)}`, "− " + money(x.c))).join("");
+  } else if (k === "gp") {
+    const list = D.group(l => l.name);
+    title = "Utilidad bruta por producto"; sum = total - cost; sumLbl = `margen ${total ? Math.round((total - cost) / total * 100) : 0} % sobre la venta neta`;
+    body = list.map(x => row(esc(x.k), `${x.q} piezas · neto ${money(x.net)} − costo ${money(x.cost)} · margen ${Math.round(x.pct)} %`, money(x.margin), { cls: x.margin >= 0 ? "green" : "red" })).join("");
+  } else if (k === "exp") {
+    title = "Gastos operativos"; sum = -exp; sumLbl = `${e.length} ${e.length === 1 ? "pago" : "pagos"} en el período`;
+    body = e.slice().sort((a, b) => b.at.localeCompare(a.at)).map(x => row(esc(x.note || x.cat), `${fmtD(x.at)} · ${esc(x.cat)} · ${esc(partnerById(x.partner || "shared").name)} · registró ${esc(userById(x.by).name)}`, "− " + money(x.amount))).join("");
+  } else {
+    const gp = total - cost, np = gp - exp;
+    title = "Utilidad neta"; sum = np; sumLbl = np >= 0 ? "lo que queda después de costos y gastos" : "los costos y gastos superan lo vendido";
+    const byDay = D.days.slice().reverse().map(d => { const sd = s.filter(x => x.day === d), n = sd.reduce((a, x) => a + x.total, 0), c = sd.reduce((a, x) => a + x.items.reduce((b, i) => b + i.cost * i.qty, 0), 0), g = e.filter(x => x.day === d).reduce((a, x) => a + x.amount, 0); return { d, n, c, g, u: n - c - g }; }).filter(x => x.n || x.g);
+    body = `<div class="er-eq"><span>Utilidad bruta</span><b>${money(gp)}</b><span>− Gastos operativos</span><b>− ${money(exp)}</b><span class="t">= Utilidad neta</span><b class="t ${np >= 0 ? "green" : "red"}">${money(np)}</b></div>` +
+      (byDay.length > 1 ? `<div class="pl-grp" style="padding:12px 2px 4px">Día por día</div>` + byDay.map(x => row(fmtD(x.d + "T12:00:00"), `neto ${money(x.n)} − costo ${money(x.c)}${x.g ? ` − gastos ${money(x.g)}` : ""}`, money(x.u), { cls: x.u >= 0 ? "green" : "red" })).join("") : "");
+  }
+  modal(`<div class="modal-h"><div><h3>${title}</h3><div class="hint">${S.partner === "all" ? "Consolidado" : esc(partnerById(S.partner).name)} · ${per}</div></div><button class="btn icon ghost" data-close>${I.x}</button></div>
+    <div class="er-sum"><span>${sumLbl}</span><b class="${sum < 0 ? "red" : ""}">${sum < 0 ? "− " + money(-sum) : money(sum)}</b></div>
+    <div class="er-list">${body || `<div class="empty">No hay movimientos en el período</div>`}</div>
+    ${["gross", "disc", "net"].includes(k) ? `<div class="hint">Tocá una línea para ver la factura completa.</div>` : ""}`);
+}
 function repView() {
   const D = repData(); const { days, s, e, total, gross, cost, exp, disc } = D;
   let tab = S.repTab || "resumen"; const P = can("canSeeProfit");
@@ -1112,9 +1156,10 @@ function repView() {
       ${P ? `<div class="card kpi"><div class="lbl">Utilidad bruta</div><div class="val" style="color:var(--green)">${money(total - cost)}</div><div class="foot">Margen ${total ? ((total - cost) / total * 100).toFixed(0) : 0} % · costo ${money(cost)}</div></div>` : `<div class="card kpi"><div class="lbl">Piezas por factura</div><div class="val">${s.length ? (D.lines.reduce((a, l) => a + l.qty, 0) / s.length).toFixed(1) : 0}</div><div class="foot">promedio</div></div>`}
     </section>
     ${P ? `<section class="card"><div class="card-h"><h2>Estado de resultados del período</h2></div><div class="card-b list" style="padding-top:4px;padding-bottom:4px">
-      <div class="row"><span>Venta bruta</span><b>${money(gross)}</b></div><div class="row"><span>− Descuentos</span><b style="color:var(--red)">− ${money(disc)}</b></div><div class="row"><span>= Venta neta</span><b>${money(total)}</b></div>
-      <div class="row"><span>− Costo de mercadería vendida</span><b>− ${money(cost)}</b></div><div class="row"><span>= Utilidad bruta</span><b>${money(total - cost)}</b></div>
-      <div class="row"><span>− Gastos operativos (${e.length})</span><b>− ${money(exp)}</b></div><div class="row" style="border-top:2px solid var(--ink)"><span style="font-weight:700">= Utilidad neta</span><b style="color:${total - cost - exp >= 0 ? "var(--green)" : "var(--red)"};font-size:16px">${money(total - cost - exp)}</b></div></div></section>` : ""}
+      ${erRow("gross", "Venta bruta", `<b>${money(gross)}</b>`)}${erRow("disc", "− Descuentos", `<b style="color:var(--red)">− ${money(disc)}</b>`)}${erRow("net", "= Venta neta", `<b>${money(total)}</b>`)}
+      ${erRow("cost", "− Costo de mercadería vendida", `<b>− ${money(cost)}</b>`)}${erRow("gp", "= Utilidad bruta", `<b>${money(total - cost)}</b>`)}
+      ${erRow("exp", `− Gastos operativos (${e.length})`, `<b>− ${money(exp)}</b>`)}${erRow("np", `<span style="font-weight:700">= Utilidad neta</span>`, `<b style="color:${total - cost - exp >= 0 ? "var(--green)" : "var(--red)"};font-size:16px">${money(total - cost - exp)}</b>`, "border-top:2px solid var(--ink)")}
+      <div class="hint" style="padding:10px 0 4px">Tocá cualquier línea para ver de qué se compone.</div></div></section>` : ""}
     <section class="card"><div class="card-h"><h2>Ventas por día</h2></div><div class="card-b"><div class="mini-chart" style="height:120px">${perDay.map((v, i) => `<i class="${i === perDay.length - 1 ? "red" : ""}" style="height:${v / pmax * 100}%" title="${days[i]} · ${money(v)}"></i>`).join("")}</div>${chartX(days.map(d => days.length <= 7 ? dayShort(d) + " " + dayNum(d) : dayNum(d)), days.length > 14 ? 3 : 1)}</div></section>
     <div class="grid-2" style="grid-template-columns:repeat(auto-fit,minmax(300px,1fr))">
       <section class="card"><div class="card-h"><h2>Más vendidos</h2></div>${tbl(`<th>Producto</th><th class="r">Uds.</th><th class="r">Neto</th>`, topL.map(g => `<tr><td><b>${esc(g.k)}</b></td><td class="r">${g.q}</td><td class="r">${money(g.net)}</td></tr>`))}</section>
@@ -1548,11 +1593,12 @@ function bind() {
   app.querySelectorAll("[data-role]").forEach(s => s.onchange = (e) => { if (CLOUD) return act(() => sbq(sb.from("profiles").update({ role: e.target.value }).eq("id", e.target.dataset.role)), "Rol actualizado"); userById(e.target.dataset.role).role = e.target.value; save(); render(); toast("Rol actualizado"); });
 }
 document.addEventListener("click", (e) => {
-  const t = e.target.closest("[data-act],[data-add],[data-qty],[data-disc],[data-pay],[data-inv],[data-rep],[data-reptab],[data-photo],[data-lim],[data-toggle],[data-partner],[data-assign],[data-editprod],[data-sale-detail],[data-spk],[data-setpin],[data-permrole],[data-edituser],[data-cattile],[data-catadd],[data-catedit],[data-catdel],[data-close]");
+  const t = e.target.closest("[data-act],[data-add],[data-qty],[data-disc],[data-pay],[data-inv],[data-rep],[data-reptab],[data-photo],[data-lim],[data-toggle],[data-partner],[data-assign],[data-editprod],[data-sale-detail],[data-spk],[data-setpin],[data-erdet],[data-permrole],[data-edituser],[data-cattile],[data-catadd],[data-catedit],[data-catdel],[data-close]");
   if (!t) { if (e.target.classList.contains("sheet-ov")) return closeSheet(); if (e.target.classList.contains("overlay")) { closeModal(); if (S.cartOpen) render(); } return; }
   if (t.dataset.close != null) { if (t.closest(".cart-screen")) S.cartOpen = false; closeModal(); if (S.cartOpen) render(); return; }
   if (t.dataset.editprod) return editProdModal(t.dataset.editprod);
   if (t.dataset.setpin) return pinSetModal(t.dataset.setpin);
+  if (t.dataset.erdet) return erDetailModal(t.dataset.erdet);
   if (t.dataset.permrole) { S.permRole = t.dataset.permrole; return render(); }
   if (t.dataset.edituser) return editUserModal(t.dataset.edituser);
   if (t.dataset.saleDetail) return saleDetailModal(t.dataset.saleDetail);

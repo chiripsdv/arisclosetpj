@@ -1026,3 +1026,26 @@ svg.li{width:20px;height:20px;flex-shrink:0;stroke-width:1.9}
 @media (max-width:900px){.vrow.nv{grid-template-columns:1fr 1fr 64px 34px}.vrow.nv input[name=v_code]{grid-column:1/-1}.vhead{grid-template-columns:1fr 1fr 64px 34px}}
 /* Editar producto en el teléfono: talla y color arriba; código, stock y quitar abajo */
 @media (max-width:900px){.vrow:not(.nv){grid-template-columns:1fr 1fr;padding:8px;border:1px solid var(--line-soft);border-radius:12px;background:#FCFAFA}.vrow:not(.nv) input[name=v_code]{grid-column:1/2}.vrow:not(.nv) .vstock{text-align:center}.vrow:not(.nv) .btn{grid-column:2;grid-row:2;justify-self:end}.vrow:not(.nv) .vstock{grid-column:2;grid-row:2;justify-self:start;align-self:center}}
+
+/* Estado de resultados con detalle */
+.er-row{width:100%;background:none;border:0;border-bottom:1px solid var(--line-soft);font:inherit;color:inherit;text-align:left;cursor:pointer;border-radius:8px;transition:background .15s,padding .15s}
+.er-row:hover{background:#FCF6F6;padding-left:8px;padding-right:4px}
+.er-v{display:inline-flex;align-items:center;gap:6px}
+.er-go{width:16px!important;height:16px!important;color:var(--faint);transition:transform .2s,color .2s}
+.er-row:hover .er-go{color:var(--red);transform:translateX(3px)}
+.er-sum{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px 16px;border-radius:16px;background:linear-gradient(135deg,#FFF5F6,#FBE7EA);border:1px solid #F7D6DA}
+.er-sum span{font-size:13px;color:var(--muted)}
+.er-sum b{font-size:22px;white-space:nowrap}
+.er-sum b.red,.er-amt.red,.er-eq .red{color:var(--red)}
+.er-amt.green,.er-eq .green{color:var(--green)}
+.er-list{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:14px;overflow:hidden;max-height:min(56vh,520px);overflow-y:auto}
+.er-item{display:flex;align-items:center;gap:12px;padding:11px 14px;border-bottom:1px solid var(--line-soft)}
+.er-item:last-child{border-bottom:0}
+.er-item.clickable{cursor:pointer}
+.er-item.clickable:hover{background:#FCF8F8}
+.er-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.er-main b{font-size:14px;font-weight:600}
+.er-main small{font-size:12px;color:var(--muted)}
+.er-amt{font-weight:700;white-space:nowrap;font-size:14px}
+.er-eq{display:grid;grid-template-columns:1fr auto;gap:10px 16px;padding:14px 16px;font-size:14px}
+.er-eq .t{font-weight:700;border-top:2px solid var(--ink);padding-top:10px;font-size:15px}
