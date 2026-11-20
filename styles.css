@@ -1164,3 +1164,22 @@ svg.li{width:20px;height:20px;flex-shrink:0;stroke-width:1.9}
 .dn-pair{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .dn-pair .field input{min-width:0}
 @media (max-width:600px){.dn-t{display:none!important}.dn.has input{border-color:#7CC79A;background:#F6FBF8}}
+
+/* Venta registrada: factura y acciones sin desplazamiento */
+.tk-ok{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;color:#fff;background:linear-gradient(135deg,#43B47A,#1E7A45);flex-shrink:0;box-shadow:0 8px 16px -8px rgba(30,122,69,.6)}
+.tk-ok svg.li{width:22px;height:22px}
+.modal-tk .modal-h h3{font-size:18px}
+.tk-wrap{display:flex;flex-direction:column;gap:14px;min-height:0}
+.tk-side{display:flex;flex-direction:column;gap:12px}
+.modal-tk .ticket-actions{grid-template-columns:1fr 1fr;gap:8px}
+.modal-tk .ticket-actions .btn{height:44px;justify-content:center}
+.modal-tk .tk-wa,.modal-tk .tk-new,.modal-tk .tk-span{grid-column:1/-1}
+.modal-tk .rc-preview{max-height:30vh;padding:10px}
+@media (min-width:760px){
+  .modal-tk{max-width:780px}
+  .tk-wrap{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:start;gap:20px}
+  .modal-tk .rc-preview{max-height:min(560px,calc(92vh - 130px))}
+  .tk-side{position:sticky;top:0}
+  .modal-tk .tk-new{margin-top:auto}
+}
+@media (max-width:900px){.modal-tk{gap:12px;padding-bottom:calc(18px + env(safe-area-inset-bottom))}}

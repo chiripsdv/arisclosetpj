@@ -875,19 +875,22 @@ function receiptHTML(s) {
 }
 function setPage(css) { let el = document.getElementById("page-style"); if (!el) { el = document.createElement("style"); el.id = "page-style"; document.head.appendChild(el); } el.textContent = css; }
 function showTicket(s) {
-  const txt = ticketText(s);
   const split = DB.partners.map(p => ({ p, x: scopeSale(s, p.id) })).filter(o => o.x);
-  modal(`<div class="modal-h"><h3>Venta registrada</h3><button class="btn icon ghost" data-close>${I.x}</button></div>
-    <div style="display:flex;gap:12px;align-items:center"><span class="avatar" style="width:40px;height:40px;background:var(--green)">✓</span><div><b style="font-size:18px">${money(s.total)}</b><div class="hint">Factura #${s.n} · ${esc(s.pay)}${s.discount ? " · descuento " + s.discount.pct + " %" : ""}</div></div></div>
-    ${split.length > 1 ? `<div class="split">${split.map(o => `<span class="who">${pDot(o.p.id)}${esc(o.p.name)} <b>${money(o.x.total)}</b></span>`).join("")}</div>` : ""}
-    <div class="rc-preview">${receiptHTML(s)}</div>
-    <div class="field"><label for="waPhone">WhatsApp de la clienta (opcional)</label><div class="phone-in"><span>+${esc(DB.settings.waCountry)}</span><input id="waPhone" type="tel" inputmode="numeric" autocomplete="tel" placeholder="8888 8888" value="${esc(s.phone || "")}"></div></div>
-    <div class="ticket-actions">
-      <button class="btn red" data-act="wa" data-sale="${s.id}">${I.wa} Enviar por WhatsApp</button>
-      ${navigator.share ? `<button class="btn" data-act="share" data-sale="${s.id}">${I.share} Compartir</button>` : ""}
-      <button class="btn" data-act="print" data-sale="${s.id}">${I.print} Imprimir</button>
-      <a href="#venta" class="btn dark" data-close>Nueva venta</a>
+  modal(`<div class="modal-h"><div class="mh-t"><span class="tk-ok">${LI("circle-check")}</span><div><h3>Venta registrada · ${money(s.total)}</h3><div class="hint">Factura #${s.n} · ${esc(s.pay)}${s.discount ? " · descuento " + s.discount.pct + " %" : ""}</div></div></div><button class="btn icon ghost" data-close>${I.x}</button></div>
+    <div class="tk-wrap">
+      <div class="rc-preview">${receiptHTML(s)}</div>
+      <div class="tk-side">
+        ${split.length > 1 ? `<div class="split">${split.map(o => `<span class="who">${pDot(o.p.id)}${esc(o.p.name)} <b>${money(o.x.total)}</b></span>`).join("")}</div>` : ""}
+        <div class="field"><label for="waPhone">WhatsApp de la clienta (opcional)</label><div class="phone-in"><span>+${esc(DB.settings.waCountry)}</span><input id="waPhone" type="tel" inputmode="numeric" autocomplete="tel" placeholder="8888 8888" value="${esc(s.phone || "")}"></div></div>
+        <div class="ticket-actions">
+          <button class="btn red tk-wa" data-act="wa" data-sale="${s.id}">${I.wa} Enviar por WhatsApp</button>
+          ${navigator.share ? `<button class="btn" data-act="share" data-sale="${s.id}">${I.share} Compartir</button>` : ""}
+          <button class="btn ${navigator.share ? "" : "tk-span"}" data-act="print" data-sale="${s.id}">${I.print} Imprimir</button>
+          <a href="#venta" class="btn dark tk-new" data-close>${I.plus} Nueva venta</a>
+        </div>
+      </div>
     </div>`);
+  $(".modal").classList.add("modal-tk");
 }
 function waSend(id) {
   const s = DB.sales.find(x => x.id === id); if (!s) return;
