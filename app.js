@@ -377,8 +377,7 @@ function loginPattern() {
 function loginView(err) {
   if (CLOUD) return `<div class="login">${loginPattern()}<form class="login-card" id="loginForm">
     <div class="login-logo"><img src="icons/logo-t.png" alt="Ari's Closet"></div>
-    <h1>Bienvenida</h1>
-    <p>Entrá con tu usuario para abrir caja</p>
+    <h1 class="lg-title">Ingresá tus credenciales de acceso</h1>
     <div class="field"><label for="lgE">Usuario</label><div class="lg-user"><input id="lgE" name="e" type="text" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="Ej. nusuario" required><span class="lg-state" id="lgState" aria-hidden="true"></span></div></div>
     <div class="lg-who" id="lgWho" aria-live="polite"></div>
     <div class="field"><label for="lgP">Contraseña</label><input id="lgP" name="p" type="password" autocomplete="current-password" required></div>
@@ -389,8 +388,7 @@ function loginView(err) {
   </form></div>`;
   return `<div class="login">${loginPattern()}<form class="login-card" id="loginForm">
     <div class="login-logo"><img src="icons/logo-t.png" alt="Ari's Closet"></div>
-    <h1>Bienvenida</h1>
-    <p>Entrá con tu usuario para abrir caja</p>
+    <h1 class="lg-title">Ingresá tus credenciales de acceso</h1>
     <div class="field"><label>Usuario</label><select name="u">${DB.users.filter(u => u.active).map(u => `<option value="${u.id}">${esc(u.name)} · ${esc(DB.roles[u.role].label)}</option>`).join("")}</select></div>
     <div class="field"><label>Contraseña</label><input name="p" type="password" value="1234" required></div>
     <button class="btn dark lg block" type="submit">Entrar</button>
