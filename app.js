@@ -1115,7 +1115,7 @@ function newExpModal() {
       $("#spreadOpts").hidden = !$("#spreadOn").checked;
       const amt = +$("#f [name=amount]").value || 0, q = Math.max(1, +$("#f [name=sq]").value || 1), u = $("#f [name=su]").value, from = $("#f [name=sf]").value || today();
       const sp = spreadSpan({ spreadQty: q, spreadUnit: u, spreadFrom: from, day: today() });
-      $("#spreadHint").innerHTML = amt ? `Se reparte en <b>${sp.n} días</b> (hasta el ${fmtD(addDaysS(sp.to, -1) + "T12:00:00")}): <b>${money(amt / sp.n)} por día</b>${u !== "dias" ? `, ${money(amt / (u === "anios" ? 12 * q : q))} por mes` : ""}.` : "Escribí el monto para ver cuánto le toca a cada día.";
+      $("#spreadHint").innerHTML = amt ? `Se reparte en <b>${sp.n} días</b> (hasta el ${(() => { const e = addDaysS(sp.to, -1); return fmtD(e + "T12:00:00") + (e.slice(0, 4) !== today().slice(0, 4) ? " de " + e.slice(0, 4) : ""); })()}): <b>${money(amt / sp.n)} por día</b>${u !== "dias" ? `, ${money(amt / (u === "anios" ? 12 * q : q))} por mes` : ""}.` : "Escribí el monto para ver cuánto le toca a cada día.";
     };
     ["#spreadOn", "#f [name=sq]", "#f [name=su]", "#f [name=sf]", "#f [name=amount]"].forEach(q => { $(q).oninput = upd; $(q).onchange = upd; });
     $("#f [name=cat]").addEventListener("change", () => { if (/alquiler|salario/i.test($("#f [name=cat]").value) && !$("#spreadOn").checked) { $("#spreadOn").checked = true; upd(); } });
