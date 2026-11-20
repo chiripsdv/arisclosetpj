@@ -1160,15 +1160,14 @@ function cashMoveModal(type) {
 function cashCountModal() {
   const c = cashNow(); if (!c || !c.open) return;
   const see = c.can_see;
-  modal(`<div class="modal-h"><div><h3>Arqueo de caja</h3><div class="hint">Contá el efectivo de la gaveta${see ? "" : ". La app no muestra cuánto debería haber, para que el conteo sea honesto"}</div></div><button class="btn icon ghost" data-close>${I.x}</button></div>
+  modal(`<div class="modal-h"><div><h3>Arqueo de caja</h3><div class="hint">Cantidad de cada uno · <span class="dn-key b">billetes</span> <span class="dn-key m">monedas</span></div></div><button class="btn icon ghost" data-close>${I.x}</button></div>
     <form id="f" class="form">
-      <div class="full dn-grid">${DENOMS.map(([d, k]) => `<label class="dn ${k}"><span class="dn-v">${d >= 1 ? d : d.toFixed(2).replace(/^0/, "")}<small>${d === 10 ? "bill./moneda" : k === "b" ? "billete" : "moneda"}</small></span><input type="number" min="0" step="1" inputmode="numeric" data-dn="${d}" placeholder="0"><span class="dn-t" data-dt="${d}"></span></label>`).join("")}</div>
-      <div class="field full"><label>Otro monto (si no se cuenta por billetes)</label><input type="number" min="0" step="0.01" inputmode="decimal" id="dnExtra" placeholder="0"></div>
+      <div class="full dn-grid">${DENOMS.map(([d, k]) => `<label class="dn ${k}" title="${d === 10 ? "Billete o moneda" : k === "b" ? "Billete" : "Moneda"} de ${d}"><span class="dn-v">${d >= 1 ? d : d.toFixed(2).replace(/^0/, "")}</span><input type="number" min="0" step="1" inputmode="numeric" data-dn="${d}" placeholder="0"><span class="dn-t" data-dt="${d}"></span></label>`).join("")}</div>
+      <div class="full dn-pair"><div class="field"><label>Otro monto</label><input type="number" min="0" step="0.01" inputmode="decimal" id="dnExtra" placeholder="Sin desglose"></div>
+      <div class="field"><label>Nota</label><input name="note" placeholder="Opcional"></div></div>
       <div class="full cz-count"><span>Total contado</span><b id="dnTotal">${money(0)}</b></div>
       ${see ? `<div class="full cz-diff" id="dnDiff"></div>` : ""}
-      <div class="field full"><label>Nota (opcional)</label><input name="note" placeholder="Ej. Faltan C$ 20 de un vuelto"></div>
       <button class="btn dark lg full" type="submit">Cerrar caja</button>
-      <button type="button" class="btn ghost full" data-act="caja">Volver</button>
     </form>`, f => {
     const { total, bd } = dnSum();
     if (!total && !confirm("El conteo da C$ 0. ¿Cerrar la caja igual?")) return false;

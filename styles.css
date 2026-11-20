@@ -1146,3 +1146,21 @@ svg.li{width:20px;height:20px;flex-shrink:0;stroke-width:1.9}
 .cash-chk b{font-size:14px;color:var(--ink)}
 .cash-chk small{font-size:12px;color:var(--muted);font-weight:400}
 .exp-row.clickable{cursor:pointer}
+/* Arqueo compacto: sin leyendas en cada casilla */
+.dn-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+@media (max-width:600px){.dn-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.dn{grid-template-columns:auto 1fr;grid-template-rows:auto;padding:6px 8px;gap:0 6px;position:relative}
+.dn-v{grid-row:auto;font-size:15px;min-width:34px}
+.dn input{height:32px;font-size:15px}
+.dn-t{position:absolute;right:8px;bottom:-1px;font-size:9.5px;min-height:0;background:#F6FBF8;padding:0 3px;border-radius:4px;line-height:1.2}
+.dn-t:empty{display:none}
+.dn-key{display:inline-flex;align-items:center;gap:4px;font-weight:600}
+.dn-key::before{content:"";width:10px;height:10px;border-radius:3px;background:#A9D8B8}
+.dn-key.m::before{background:#E8C98F}
+.dn-key.b{margin-right:6px}
+.cz-count{padding:10px 16px}
+.cz-diff{padding:8px 12px}
+@media (max-width:600px){.dn-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:5px}.dn{grid-template-columns:1fr;padding:5px 6px 6px;text-align:center}.dn-v{min-width:0;font-size:13px;text-align:center}.dn input{height:30px;font-size:15px}.dn-t{right:50%;transform:translateX(50%);bottom:-6px}.cz-count b{font-size:20px}}
+.dn-pair{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.dn-pair .field input{min-width:0}
+@media (max-width:600px){.dn-t{display:none!important}.dn.has input{border-color:#7CC79A;background:#F6FBF8}}
