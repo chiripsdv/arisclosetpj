@@ -896,3 +896,8 @@ svg.li{width:20px;height:20px;flex-shrink:0;stroke-width:1.9}
 .login-card.bye{text-align:center;gap:16px}.login-card.bye p{font-size:14px}#byeBack{color:var(--red);border:1.5px solid var(--red);background:#fff}
 .topbar .spk-seg{margin:0 4px 0 0}
 .lg-who.bad b{color:var(--red);font-size:14px;overflow-wrap:anywhere}.lg-who.bad small{color:#B4444F}
+.lg-err{display:none;align-items:center;gap:8px;margin-top:-8px;font-size:13px;font-weight:600;color:var(--red)}
+.lg-err.on{display:flex;animation:lgIn .25s ease}
+.lg-err svg.li{width:16px;height:16px}
+.login-card input.invalid{border-color:var(--red);box-shadow:0 0 0 3px rgba(214,0,28,.12);animation:shake .35s}
+@keyframes shake{20%,60%{transform:translateX(-4px)}40%,80%{transform:translateX(4px)}}

@@ -382,6 +382,7 @@ function loginView(err) {
     <div class="field"><label for="lgE">Usuario</label><div class="lg-user"><input id="lgE" name="e" type="text" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="Ej. nusuario" required><span class="lg-state" id="lgState" aria-hidden="true"></span></div></div>
     <div class="lg-who" id="lgWho" aria-live="polite"></div>
     <div class="field"><label for="lgP">Contraseña</label><input id="lgP" name="p" type="password" autocomplete="current-password" required></div>
+    <div class="lg-err" id="lgErr" role="alert"></div>
     ${err ? `<div class="err">${esc(err)}</div>` : ""}
     <div class="lg-btns"><button class="btn lg" type="button" id="lgCancel">Cancelar</button><button class="btn dark lg" type="submit" id="lgGo">Entrar</button></div>
     <button class="btn ghost block lg-forgot" type="button" id="lgForgot">Olvidé mi contraseña</button>
@@ -413,7 +414,15 @@ function bindLogin() {
       e.preventDefault(); const f = new FormData(e.target), btn = e.target.querySelector("[type=submit]");
       btn.disabled = true; btn.textContent = "Entrando…";
       const { data, error } = await sb.auth.signInWithPassword({ email: toEmail(f.get("e")), password: f.get("p") });
-      if (error) { btn.disabled = false; btn.textContent = "Entrar"; return toast(errMsg(error), true); }
+      if (error) {
+        btn.disabled = false; btn.textContent = "Entrar";
+        const bad = /invalid login credentials/i.test(error.message || "");
+        // Si el usuario ya se reconoció arriba, el problema es solo la contraseña
+        const msg = bad && found ? "Contraseña incorrecta. Intentá de nuevo." : errMsg(error);
+        $("#lgErr").innerHTML = `${LI("circle-alert")}<span>${esc(msg)}</span>`; $("#lgErr").classList.add("on");
+        if (bad && found) { const pw = $("#lgP"); pw.classList.add("invalid"); pw.select(); pw.focus(); }
+        return;
+      }
       cloudStart(data.user);
     };
     // Al escribir el usuario se busca en la base y se muestra su nombre (o se avisa que no existe)
@@ -431,11 +440,12 @@ function bindLogin() {
       found = r; go.disabled = false;
       show("ok", `<span class="avatar ${/propiet/i.test(r.role) ? "red" : ""}">${esc(initials(r.name))}</span><span><small>Hola,</small><b>${esc(r.name)}</b><small>${esc(r.role)}</small></span>`, "ok");
     };
-    inp.oninput = () => { clearTimeout(timer); go.disabled = false; timer = setTimeout(check, 350); };
+    inp.oninput = () => { $("#lgErr").classList.remove("on"); $("#lgP").classList.remove("invalid"); clearTimeout(timer); go.disabled = false; timer = setTimeout(check, 350); };
     inp.onblur = () => { clearTimeout(timer); check(); };
     inp.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); clearTimeout(timer); check().then(() => { if (found || !go.disabled) $("#lgP").focus(); }); } };
     // Autocompletado del navegador: revisa el usuario aunque no se haya tecleado
     $("#lgP").onfocus = () => check();
+    $("#lgP").oninput = () => { $("#lgP").classList.remove("invalid"); $("#lgErr").classList.remove("on"); };
     setTimeout(() => { if (inp.value.trim()) check(); }, 700);
     // Cancelar: cierra la app instalada o la pestaña; si el navegador no lo permite, deja la pantalla de despedida
     $("#lgCancel").onclick = () => {
