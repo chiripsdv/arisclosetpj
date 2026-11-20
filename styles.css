@@ -1011,3 +1011,18 @@ svg.li{width:20px;height:20px;flex-shrink:0;stroke-width:1.9}
 @keyframes isBounce{0%,100%{transform:translateY(0)}50%{transform:translateY(6px)}}
 .is-later{height:44px;color:var(--muted)}
 @media (prefers-reduced-motion:reduce){.is-go,.is-arrow{animation:none}}
+
+/* Variantes del nuevo producto */
+.vgen{display:grid;grid-template-columns:1fr 1fr auto;gap:6px;margin-bottom:6px}
+.vgen input{height:38px;border:1px dashed #E3C7CC;border-radius:8px;padding:0 10px;min-width:0;background:#FFFBFB}
+.vhead{display:grid;grid-template-columns:1fr 1fr 70px 34px;gap:6px;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;padding:0 2px}
+.vhead.noq{grid-template-columns:1fr 1fr 34px}
+.vrow.nv{grid-template-columns:1fr 1fr 70px 34px;padding:8px;border:1px solid var(--line-soft);border-radius:12px;background:#FCFAFA}
+.vhead.noq + .vrows .vrow.nv{grid-template-columns:1fr 1fr 34px}
+.vrow.nv input[name=v_code]{grid-column:1/-1;font-size:13px;color:var(--ink-2)}
+.vrow.nv input[name=v_qty]{text-align:center;font-weight:700}
+.vrow.nv .btn{width:34px;padding:0;justify-content:center}
+.vrow input.flash{border-color:var(--green);box-shadow:0 0 0 3px rgba(30,122,69,.18)}
+@media (max-width:900px){.vrow.nv{grid-template-columns:1fr 1fr 64px 34px}.vrow.nv input[name=v_code]{grid-column:1/-1}.vhead{grid-template-columns:1fr 1fr 64px 34px}}
+/* Editar producto en el teléfono: talla y color arriba; código, stock y quitar abajo */
+@media (max-width:900px){.vrow:not(.nv){grid-template-columns:1fr 1fr;padding:8px;border:1px solid var(--line-soft);border-radius:12px;background:#FCFAFA}.vrow:not(.nv) input[name=v_code]{grid-column:1/2}.vrow:not(.nv) .vstock{text-align:center}.vrow:not(.nv) .btn{grid-column:2;grid-row:2;justify-self:end}.vrow:not(.nv) .vstock{grid-column:2;grid-row:2;justify-self:start;align-self:center}}

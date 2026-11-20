@@ -936,7 +936,7 @@ function editProdModal(id) {
       <input name="v_color" value="${esc(v ? v.color : "")}" placeholder="Color" aria-label="Color" required>
       <input name="v_code" value="${esc(v ? v.code : CLOUD ? "" : newCode())}" placeholder="${v || !CLOUD ? "Código" : "Automático"}" aria-label="Código de barras" inputmode="numeric">
       <span class="vstock" title="El stock se cambia con Registrar entrada">${v ? v.stock + " uds." : "nueva"}</span>
-      <button type="button" class="btn ghost sm" data-delvrow title="Quitar variante" ${v && (v.stock > 0 || sold(v.id)) ? "disabled" : ""}>${I.x}</button>
+      <button type="button" class="btn ghost sm" data-delvrow data-stock="${v ? v.stock : 0}" title="${v && sold(v.id) ? "Tiene ventas: no se puede quitar" : "Quitar variante"}" ${v && (sold(v.id) || (v.stock > 0 && !can("canStockIn"))) ? "disabled" : ""}>${I.x}</button>
     </div>`;
   modal(`<div class="modal-h"><h3>Editar producto</h3><button class="btn icon ghost" data-close>${I.x}</button></div>
   <form id="f" class="form">
@@ -949,10 +949,10 @@ function editProdModal(id) {
     <div class="field full"><label>Tallas y colores</label>
       <div id="vrows" class="vrows">${p.variants.map(vrow).join("")}</div>
       <button type="button" class="btn sm" id="addVrow" style="align-self:flex-start">${I.plus} Agregar variante</button>
-      <span class="hint">El stock no se edita aquí: se cambia con <b>Registrar entrada</b> para que quede en el historial. Solo se pueden quitar variantes sin stock y sin ventas.</span>
+      <span class="hint">El stock no se edita aquí: se cambia con <b>Registrar entrada</b> para que quede en el historial. Si quitás una variante que tiene unidades, se descuentan con un ajuste. Las que ya tienen ventas no se pueden quitar.</span>
     </div>
     <button class="btn dark lg full" type="submit">Guardar cambios</button>
-    <button type="button" class="btn ghost full" data-act="delprod" data-pid="${p.id}" ${p.variants.some(v => v.stock > 0 || sold(v.id)) ? "disabled title='Tiene stock o ventas registradas'" : ""}>Eliminar producto</button>
+    <button type="button" class="btn ghost full" data-act="delprod" data-pid="${p.id}" ${p.variants.some(v => sold(v.id)) ? "disabled title='Tiene ventas registradas'" : ""}>Eliminar producto</button>
   </form>`, (f) => {
     const rows = [...document.querySelectorAll("#vrows .vrow")].map(r => ({ id: r.dataset.vrow, size: r.querySelector("[name=v_size]").value.trim(), color: r.querySelector("[name=v_color]").value.trim(), code: r.querySelector("[name=v_code]").value.trim() }));
     if (!rows.length) { toast("El producto necesita al menos una variante", true); return false; }
@@ -960,16 +960,44 @@ function editProdModal(id) {
     if (new Set(codes).size !== codes.length) { toast("Hay códigos repetidos", true); return false; }
     const clash = codes.find(c => DB.products.some(x => x.id !== p.id && x.variants.some(v => v.code === c)));
     if (clash) { toast(`El código ${clash} ya lo usa otro producto`, true); return false; }
-    if (CLOUD) return act(() => sbq(sb.rpc("save_product", { p: Object.assign({ id: p.id, name: f.get("name").trim(), category_id: CL.catId[f.get("cat")] || null, brand_id: CL.brandId[f.get("brand")] || null, partner_id: f.get("partner"), price: +f.get("price") },
-      can("canSeeCost") ? { cost: +f.get("cost") } : {}, { variants: rows.map(r => ({ id: r.id === "new" ? null : r.id, size: r.size, color: r.color, barcode: r.code || null })) }) })), "Producto actualizado");
+    if (CLOUD) return act(async () => {
+      // Variantes quitadas que tenían unidades: se bajan a cero con un ajuste (queda en el kárdex)
+      for (const v of p.variants) if (v.stock > 0 && !rows.some(r => r.id === v.id)) await sbq(sb.rpc("stock_in", { p_variant: v.id, p_qty: -v.stock, p_type: "ajuste", p_note: "Variante eliminada" }));
+      await sbq(sb.rpc("save_product", { p: Object.assign({ id: p.id, name: f.get("name").trim(), category_id: CL.catId[f.get("cat")] || null, brand_id: CL.brandId[f.get("brand")] || null, partner_id: f.get("partner"), price: +f.get("price") },
+      can("canSeeCost") ? { cost: +f.get("cost") } : {}, { variants: rows.map(r => ({ id: r.id === "new" ? null : r.id, size: r.size, color: r.color, barcode: r.code || null })) }) }));
+    }, "Producto actualizado");
     Object.assign(p, { name: f.get("name").trim(), cat: f.get("cat"), brand: f.get("brand"), cost: +f.get("cost"), price: +f.get("price"), partner: f.get("partner") });
     p.variants = rows.map(r => { const v = p.variants.find(x => x.id === r.id) || { id: uid(), stock: 0 }; return Object.assign(v, { size: r.size, color: r.color, code: r.code || newCode() }); });
     save(); render(); toast("Producto actualizado");
   });
   $("#addVrow").onclick = () => { $("#vrows").insertAdjacentHTML("beforeend", vrow(null)); $("#vrows .vrow:last-child input").focus(); };
-  $("#vrows").onclick = (e) => { const b = e.target.closest("[data-delvrow]"); if (b && !b.disabled) b.closest(".vrow").remove(); };
+  $("#vrows").onclick = (e) => {
+    const b = e.target.closest("[data-delvrow]"); if (!b || b.disabled) return;
+    const n = +b.dataset.stock || 0;
+    if (n > 0 && !confirm(`Esta variante tiene ${n} ${n === 1 ? "unidad" : "unidades"}. Al guardar se descuentan del inventario con un ajuste. ¿Quitarla?`)) return;
+    b.closest(".vrow").remove();
+  };
+  codeFieldKeys();
 }
+// En los campos de código, Enter (lector de barras) pasa al siguiente campo en vez de guardar el formulario
+function codeFieldKeys() {
+  $("#vrows").addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" || !e.target.matches("input")) return;
+    e.preventDefault();
+    const all = [...document.querySelectorAll("#vrows input")], i = all.indexOf(e.target);
+    if (all[i + 1]) all[i + 1].focus();
+  });
+}
+// Nuevo producto: cada fila es una prenda distinta (talla + color) con su cantidad y su código
 function newProdModal() {
+  const stockOk = can("canStockIn");
+  const nrow = (sz = "", co = "", q = 1) => `<div class="vrow nv">
+      <input name="v_size" value="${esc(sz)}" placeholder="Talla" aria-label="Talla" required>
+      <input name="v_color" value="${esc(co)}" placeholder="Color" aria-label="Color" required>
+      ${stockOk ? `<input name="v_qty" type="number" min="0" value="${q}" aria-label="Cantidad" title="Cantidad que llegó">` : ""}
+      <button type="button" class="btn ghost sm" data-delvrow title="Quitar">${I.x}</button>
+      <input name="v_code" placeholder="Código: automático o escaneá" aria-label="Código de barras" inputmode="numeric">
+    </div>`;
   modal(`<div class="modal-h"><h3>Nuevo producto</h3><button class="btn icon ghost" data-close>${I.x}</button></div>
   <form id="f" class="form">
   <div class="field full"><label>Nombre</label><input name="name" required placeholder="Ej. Falda plisada"></div>
@@ -978,19 +1006,42 @@ function newProdModal() {
   <div class="field full"><label>Socio dueño</label><select name="partner">${partnerOpts(S.partner !== "all" ? S.partner : DB.partners[0].id)}</select></div>
   ${can("canSeeCost") ? `<div class="field"><label>Costo</label><input name="cost" type="number" min="0" required></div>` : `<input type="hidden" name="cost" value="0"><div class="field"><label>Costo</label><span class="hint" style="padding-top:10px">Lo completa la propietaria.</span></div>`}
   <div class="field"><label>Precio de venta</label><input name="price" type="number" min="0" required></div>
-  <div class="field"><label>Tallas (separadas por coma)</label><input name="sizes" value="S, M, L" required></div>
-  <div class="field"><label>Colores (separados por coma)</label><input name="colors" value="Negro" required></div>
-  ${can("canStockIn") ? `<div class="field full"><label>Stock inicial por variante</label><input name="stock" type="number" min="0" value="0"></div>` : `<input type="hidden" name="stock" value="0">`}
+  <div class="field full"><label>Tallas y colores que llegaron</label>
+    <div class="vgen"><input id="genS" placeholder="Tallas: S, M, L"><input id="genC" placeholder="Colores: Negro, Azul"><button type="button" class="btn sm" id="genGo">Combinar</button></div>
+    <div class="vhead ${stockOk ? "" : "noq"}"><span>Talla</span><span>Color</span>${stockOk ? "<span>Cant.</span>" : ""}<span></span></div>
+    <div id="vrows" class="vrows">${nrow()}</div>
+    <button type="button" class="btn sm" id="addVrow" style="align-self:flex-start">${I.plus} Agregar fila</button>
+    <span class="hint">Una fila por cada combinación que trajiste, con su cantidad. ¿Trajiste S Negro y M Azul? Son dos filas. “Combinar” arma todas las combinaciones y quitás las que no.</span>
+  </div>
   <button class="btn dark lg full" type="submit">Crear producto</button></form>`, (f) => {
-    const sizes = f.get("sizes").split(",").map(s => s.trim()).filter(Boolean), colors = f.get("colors").split(",").map(s => s.trim()).filter(Boolean);
-    if (CLOUD) return act(() => sbq(sb.rpc("save_product", { p: { name: f.get("name").trim(), category_id: CL.catId[f.get("cat")] || null, brand_id: CL.brandId[f.get("brand")] || null, partner_id: f.get("partner"), price: +f.get("price"), cost: +f.get("cost"),
-      variants: sizes.flatMap(sz => colors.map(c => ({ size: sz, color: c, barcode: null, initial_stock: +f.get("stock") || 0 }))) } })), `Producto "${f.get("name").trim()}" creado con ${sizes.length * colors.length} variantes`);
-    const p = { id: uid(), partner: f.get("partner"), name: f.get("name"), cat: f.get("cat"), brand: f.get("brand"), cost: +f.get("cost"), price: +f.get("price"), variants: [] };
+    const rows = [...document.querySelectorAll("#vrows .vrow")].map(r => ({ size: r.querySelector("[name=v_size]").value.trim(), color: r.querySelector("[name=v_color]").value.trim(), code: r.querySelector("[name=v_code]").value.trim(), qty: stockOk ? Math.max(0, +r.querySelector("[name=v_qty]").value || 0) : 0 })).filter(r => r.size || r.color);
+    if (!rows.length) { toast("Agregá al menos una talla y color", true); return false; }
+    const keys = rows.map(r => (r.size + "|" + r.color).toLowerCase());
+    if (new Set(keys).size !== keys.length) { toast("Hay dos filas con la misma talla y color", true); return false; }
+    const codes = rows.map(r => r.code).filter(Boolean);
+    if (new Set(codes).size !== codes.length) { toast("Hay códigos repetidos", true); return false; }
+    const clash = codes.find(c => findByCode(c)); if (clash) { toast(`El código ${clash} ya lo usa otra prenda`, true); return false; }
+    const name = f.get("name").trim(), units = rows.reduce((a, r) => a + r.qty, 0);
+    const msg = `"${name}" creado: ${rows.length} ${rows.length === 1 ? "variante" : "variantes"}${units ? `, ${units} ${units === 1 ? "unidad" : "unidades"}` : ""}`;
+    if (CLOUD) return act(() => sbq(sb.rpc("save_product", { p: { name, category_id: CL.catId[f.get("cat")] || null, brand_id: CL.brandId[f.get("brand")] || null, partner_id: f.get("partner"), price: +f.get("price"), cost: +f.get("cost"),
+      variants: rows.map(r => ({ size: r.size, color: r.color, barcode: r.code || null, initial_stock: r.qty })) } })), msg);
+    const p = { id: uid(), partner: f.get("partner"), name, cat: f.get("cat"), brand: f.get("brand"), cost: +f.get("cost"), price: +f.get("price"), variants: [] };
     DB.products.push(p);
-    sizes.forEach(s => colors.forEach(c => p.variants.push({ id: uid(), size: s, color: c, stock: +f.get("stock"), code: newCode() })));
-    DB.products.pop();
-    DB.products.push(p); save(); render(); toast(`Producto "${p.name}" creado con ${p.variants.length} variantes`);
+    rows.forEach(r => p.variants.push({ id: uid(), size: r.size, color: r.color, stock: r.qty, code: r.code || newCode() }));
+    save(); render(); toast(msg);
   });
+  $("#addVrow").onclick = () => { $("#vrows").insertAdjacentHTML("beforeend", nrow()); $("#vrows .vrow:last-child input").focus(); };
+  $("#vrows").onclick = (e) => { const b = e.target.closest("[data-delvrow]"); if (b) b.closest(".vrow").remove(); };
+  $("#genGo").onclick = () => {
+    const split = (x) => x.split(",").map(t => t.trim()).filter(Boolean);
+    const sz = split($("#genS").value), co = split($("#genC").value);
+    if (!sz.length || !co.length) return toast("Escribí al menos una talla y un color", true);
+    // quita filas vacías y agrega las combinaciones que falten
+    document.querySelectorAll("#vrows .vrow").forEach(r => { if (!r.querySelector("[name=v_size]").value.trim() && !r.querySelector("[name=v_color]").value.trim()) r.remove(); });
+    const have = new Set([...document.querySelectorAll("#vrows .vrow")].map(r => (r.querySelector("[name=v_size]").value.trim() + "|" + r.querySelector("[name=v_color]").value.trim()).toLowerCase()));
+    sz.forEach(a => co.forEach(c => { if (!have.has((a + "|" + c).toLowerCase())) $("#vrows").insertAdjacentHTML("beforeend", nrow(a, c)); }));
+  };
+  codeFieldKeys();
 }
 
 /* ---------- Gastos ---------- */
@@ -1540,7 +1591,11 @@ document.addEventListener("click", (e) => {
   else if (a === "void") voidModal(t.dataset.sale);
   else if (a === "reticket") { const x = DB.sales.find(s => s.id === t.dataset.sale); if (x) showTicket(x); }
   else if (a === "share") shareTicket(t.dataset.sale);
-  else if (a === "delprod" && CLOUD) { if (confirm("¿Eliminar este producto?")) act(() => sbq(sb.from("products").update({ active: false }).eq("id", t.dataset.pid)), "Producto eliminado").then(ok => ok && closeModal()); }
+  else if (a === "delprod" && CLOUD) { const pr = prodById(t.dataset.pid), st = pr ? pr.variants.reduce((x, v) => x + v.stock, 0) : 0;
+    if (confirm(st ? `¿Eliminar este producto? Sus ${st} unidades se descuentan del inventario con un ajuste.` : "¿Eliminar este producto?")) act(async () => {
+      for (const v of pr.variants) if (v.stock > 0) await sbq(sb.rpc("stock_in", { p_variant: v.id, p_qty: -v.stock, p_type: "ajuste", p_note: "Producto eliminado" }));
+      await sbq(sb.from("products").update({ active: false }).eq("id", t.dataset.pid));
+    }, "Producto eliminado").then(ok => ok && closeModal()); }
   else if (a === "delprod") { if (confirm("¿Eliminar este producto?")) { DB.products = DB.products.filter(x => x.id !== t.dataset.pid); save(); closeModal(); render(); toast("Producto eliminado"); } }
   else if (a === "labels") labelsModal();
   else if (a === "pair") pairModal();
@@ -1646,6 +1701,9 @@ function handleScan(code, src) {
   const r = findByCode(code);
   beep(!!r);
   if ($("#siVid")) { if (r) selectStockVariant(r); else toast(`Código ${code} no registrado`, true); return; }
+  // Formulario de producto abierto: el código va al campo enfocado o al primero vacío
+  const vc = $("#vrows input[name=v_code]:focus") || [...document.querySelectorAll("#vrows input[name=v_code]")].find(i => !i.value.trim());
+  if ($("#vrows")) { if (r) return toast(`El código ${code} ya es de ${r.p.name} ${r.v.size}`, true); if (!vc) return toast("Agregá una fila para ese código", true); vc.value = code; vc.classList.add("flash"); setTimeout(() => vc.classList.remove("flash"), 900); return toast(`Código ${code} cargado`); }
   if (!r) { toast(`Código ${code} no está registrado`, true); if (can("canEditCatalog") && !$("#camReader")) assignCodeModal(code); return; }
   if (!role().views.includes("venta")) return;
   if (view() !== "venta") { location.hash = "venta"; }
