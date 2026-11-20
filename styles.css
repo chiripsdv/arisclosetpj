@@ -1067,3 +1067,19 @@ svg.li{width:20px;height:20px;flex-shrink:0;stroke-width:1.9}
 .exp-warn{flex-direction:row!important;align-items:flex-start;gap:8px;padding:10px 12px;border-radius:12px;background:#FFF6EA;border:1px solid #F4E2CA;color:#7A4E12;font-size:12.5px;line-height:1.4}
 .exp-warn[hidden]{display:none!important}
 .exp-warn svg.li{width:17px;height:17px;flex-shrink:0;margin-top:1px}
+
+/* Gastos: lista sin barra de desplazamiento */
+.exp-grid{grid-template-columns:minmax(0,1.7fr) minmax(260px,1fr)}
+@media (max-width:1000px){.exp-grid{grid-template-columns:minmax(0,1fr)}}
+.exp-list{display:flex;flex-direction:column}
+.exp-row{display:flex;align-items:center;gap:14px;padding:12px 18px;border-bottom:1px solid var(--line-soft)}
+.exp-row:last-child{border-bottom:0}
+.exp-row:hover{background:#FCF9F9}
+.exp-date{width:42px;flex-shrink:0;display:flex;flex-direction:column;align-items:center;padding:5px 0;border-radius:10px;background:#FFF4F5;border:1px solid #F7D6DA;line-height:1.05}
+.exp-date b{font-size:16px;color:var(--red)}
+.exp-date small{font-size:10.5px;text-transform:uppercase;color:var(--muted);letter-spacing:.04em}
+.exp-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
+.exp-main > b{font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.exp-meta{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.exp-meta .chip{font-size:11px}
+.exp-amt{white-space:nowrap;font-size:14.5px}
