@@ -385,8 +385,7 @@ function loginView(err) {
     <div class="lg-err" id="lgErr" role="alert"></div>
     ${err ? `<div class="err">${esc(err)}</div>` : ""}
     <div class="lg-btns"><button class="btn lg" type="button" id="lgCancel">Cancelar</button><button class="btn dark lg" type="submit" id="lgGo">Entrar</button></div>
-    <button class="btn ghost block lg-forgot" type="button" id="lgForgot">Olvidé mi contraseña</button>
-    ${installHTML()}
+    <div class="lg-foot"><button class="btn ghost sm" type="button" id="lgForgot">Olvidé mi contraseña</button>${installHTML()}</div>
   </form></div>`;
   return `<div class="login">${loginPattern()}<form class="login-card" id="loginForm">
     <div class="login-logo"><img src="icons/logo-t.png" alt="Ari's Closet"></div>
