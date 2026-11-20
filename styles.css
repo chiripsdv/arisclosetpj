@@ -1049,3 +1049,21 @@ svg.li{width:20px;height:20px;flex-shrink:0;stroke-width:1.9}
 .er-amt{font-weight:700;white-space:nowrap;font-size:14px}
 .er-eq{display:grid;grid-template-columns:1fr auto;gap:10px 16px;padding:14px 16px;font-size:14px}
 .er-eq .t{font-weight:700;border-top:2px solid var(--ink);padding-top:10px;font-size:15px}
+
+/* Gastos prorrateados */
+.spread-box{border:1px solid var(--line);border-radius:14px;padding:12px 14px;background:#FCFAFA;gap:10px}
+.spread-tg{display:flex;justify-content:space-between;align-items:center;gap:12px;cursor:pointer;margin:0}
+.spread-tg > span:first-child{display:flex;flex-direction:column;gap:2px}
+.spread-tg b{font-size:14px;color:var(--ink)}
+.spread-tg small{font-size:12px;color:var(--muted);font-weight:400}
+.spread-opts{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding-top:10px;border-top:1px dashed var(--line);margin-top:4px}
+.spread-opts[hidden]{display:none}
+.spread-q{display:grid;grid-template-columns:70px 1fr;gap:6px}
+.spread-q input,.spread-q select{min-width:0}
+#spreadHint{grid-column:1/-1;margin:0}
+.spread-s{display:flex;align-items:center;gap:5px;color:#8A5A12;font-size:11.5px;margin-top:3px}
+.spread-s svg.li{width:13px;height:13px}
+.chip.spread{background:#FFF3E0;color:#8A5A12;font-size:10.5px;margin-left:6px;vertical-align:1px}
+.exp-warn{flex-direction:row!important;align-items:flex-start;gap:8px;padding:10px 12px;border-radius:12px;background:#FFF6EA;border:1px solid #F4E2CA;color:#7A4E12;font-size:12.5px;line-height:1.4}
+.exp-warn[hidden]{display:none!important}
+.exp-warn svg.li{width:17px;height:17px;flex-shrink:0;margin-top:1px}

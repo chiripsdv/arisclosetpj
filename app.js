@@ -125,6 +125,11 @@ const photoUrl = (path) => path ? sb.storage.from("product-photos").getPublicUrl
 const one = (x) => Array.isArray(x) ? x[0] : x;
 const ROLE_ORDER = ["propietaria", "admin", "vendedor"];
 
+// Gastos del período más los prorrateados (aunque se hayan pagado antes). Si falta el script 0007, sigue sin prorrateo.
+async function loadExpenses(sinceDay) {
+  try { const r = await sbAll(() => sb.from("expenses").select("*").or(`day.gte.${sinceDay},spread_qty.not.is.null`).order("created_at").order("id")); CL.noSpread = false; return r; }
+  catch (e) { if (!/spread_qty|column|42703|PGRST/i.test(String(e && (e.message || e.code)))) throw e; CL.noSpread = true; return sbAll(() => sb.from("expenses").select("*").gte("day", sinceDay).order("created_at").order("id")); }
+}
 // Lee todo lo que el rol puede ver y lo deja con la misma forma que usa la app
 async function cloudLoad() {
   const since = new Date(); since.setDate(since.getDate() - 62); const sinceDay = dayOf(since);
@@ -141,7 +146,7 @@ async function cloudLoad() {
     sbAll(() => sb.from("products").select("*, product_costs(cost), variants(*)").eq("active", true).order("created_at").order("id")),
     sbAll(() => sb.from("sales").select("*, sale_items(*, sale_item_costs(unit_cost))").gte("day", sinceDay).order("created_at").order("id")),
     sbAll(() => sb.from("stock_moves").select("*, sales(number)").gte("created_at", since.toISOString()).order("id")),
-    sbAll(() => sb.from("expenses").select("*").gte("day", sinceDay).order("created_at").order("id"))
+    loadExpenses(sinceDay)
   ]);
   const D = emptyDB();
   roles.sort((a, b) => ROLE_ORDER.indexOf(a.key) - ROLE_ORDER.indexOf(b.key)).forEach(r => {
@@ -162,7 +167,7 @@ async function cloudLoad() {
     discount: s.discount_type ? { type: s.discount_type, pct: +s.discount_pct, amount: +s.discount_amount, code: s.discount_code, by: s.authorized_by } : null,
     items: (s.sale_items || []).map(i => ({ pid: i.product_id, vid: i.variant_id, partner: i.partner_id, name: i.name, size: i.size, color: i.color, qty: i.qty, price: +i.price, cost: one(i.sale_item_costs) ? +one(i.sale_item_costs).unit_cost : 0 })) }));
   D.moves = moves.map(m => ({ id: m.id, at: m.created_at, vid: m.variant_id, partner: m.partner_id, type: m.type, qty: m.qty, by: m.user_id, ref: m.sales ? m.sales.number : null, note: m.note }));
-  D.expenses = exps.map(e => ({ id: e.id, at: e.created_at, day: e.day, cat: CL.ecatName[e.category_id] || "", amount: +e.amount, note: e.note, partner: e.partner_id || "shared", by: e.user_id, receipt: e.receipt_path }));
+  D.expenses = exps.map(e => ({ id: e.id, at: e.created_at, day: e.day, cat: CL.ecatName[e.category_id] || "", amount: +e.amount, note: e.note, partner: e.partner_id || "shared", by: e.user_id, receipt: e.receipt_path, spreadQty: e.spread_qty || null, spreadUnit: e.spread_unit || null, spreadFrom: e.spread_from || null }));
   // Variantes de productos dados de baja: siguen apareciendo en ventas y kárdex
   DB = D;
   if (me) { const fresh = DB.users.find(u => u.id === me.id); if (!fresh || !fresh.active || !DB.roles[fresh.role]) { me = null; CL.pending = fresh || {}; return cloudPending(); } me = fresh; }
@@ -252,6 +257,27 @@ function scopeSale(x, pid) {
 }
 const scoped = (list) => S.partner === "all" ? list : list.map(x => scopeSale(x, S.partner)).filter(Boolean);
 const expShare = (e, pid) => e.partner === pid ? e.amount : (!e.partner || e.partner === "shared") ? Math.round(e.amount * (partnerById(pid).share || 0) / 100) : 0;
+// ---------- Gastos prorrateados ----------
+const addDaysS = (d, n) => { const x = new Date(d + "T12:00:00"); x.setDate(x.getDate() + n); return dayOf(x); };
+const addMonthsS = (d, n) => { const x = new Date(d + "T12:00:00"), day = x.getDate(); x.setDate(1); x.setMonth(x.getMonth() + n); x.setDate(Math.min(day, new Date(x.getFullYear(), x.getMonth() + 1, 0).getDate())); return dayOf(x); };
+const UNIT = { dias: ["día", "días"], meses: ["mes", "meses"], anios: ["año", "años"] };
+// Del día "from" (incluido) al "to" (excluido) y cuántos días son
+function spreadSpan(x) {
+  if (!x.spreadQty || !x.spreadUnit) return null;
+  const from = x.spreadFrom || x.day;
+  const to = x.spreadUnit === "dias" ? addDaysS(from, x.spreadQty) : addMonthsS(from, x.spreadUnit === "anios" ? 12 * x.spreadQty : x.spreadQty);
+  return { from, to, n: Math.max(1, Math.round((Date.parse(to + "T12:00:00") - Date.parse(from + "T12:00:00")) / 864e5)) };
+}
+// Los gastos que le corresponden a esos días: los normales por su fecha y los prorrateados solo en su parte
+function expFor(days) {
+  const set = new Set(days);
+  return DB.expenses.map(x => {
+    const sp = spreadSpan(x); if (!sp) return set.has(x.day) ? x : null;
+    const k = days.filter(d => d >= sp.from && d < sp.to).length; if (!k) return null;
+    return { ...x, amount: Math.round(x.amount * k / sp.n * 100) / 100, alloc: { k, n: sp.n, full: x.amount, from: sp.from, to: sp.to } };
+  }).filter(Boolean);
+}
+const spreadTxt = (x) => { const sp = spreadSpan(x); if (!sp) return ""; return `${x.spreadQty} ${UNIT[x.spreadUnit][x.spreadQty === 1 ? 0 : 1]} desde ${fmtD(sp.from + "T12:00:00")} · ${money(x.amount / sp.n)} por día`; };
 const scopedExp = (list) => S.partner === "all" ? list : list.map(e => ({ ...e, amount: expShare(e, S.partner) })).filter(e => e.amount > 0);
 const inPartner = (p) => S.partner === "all" || p.partner === S.partner;
 const lowStockP = () => lowStock().filter(x => inPartner(x.p));
@@ -493,12 +519,12 @@ function bindLogin() {
 function panelView() {
   if (!can("seeAllSales")) return myPanelView();
   const t = today(), s = scoped(salesOf(t));
-  const WD = lastN(S.spk), W = WD.map(d => { const ds = scoped(salesOf(d)); return { total: ds.reduce((a, x) => a + x.total, 0), n: ds.length, disc: ds.reduce((a, x) => a + (x.discount ? x.discount.amount : 0), 0), cost: ds.reduce((a, x) => a + x.items.reduce((b, i) => b + i.cost * i.qty, 0), 0), units: ds.reduce((a, x) => a + x.items.reduce((b, i) => b + i.qty, 0), 0), exp: scopedExp(DB.expenses.filter(e => e.day === d)).reduce((a, e) => a + e.amount, 0) }; });
+  const WD = lastN(S.spk), W = WD.map(d => { const ds = scoped(salesOf(d)); return { total: ds.reduce((a, x) => a + x.total, 0), n: ds.length, disc: ds.reduce((a, x) => a + (x.discount ? x.discount.amount : 0), 0), cost: ds.reduce((a, x) => a + x.items.reduce((b, i) => b + i.cost * i.qty, 0), 0), units: ds.reduce((a, x) => a + x.items.reduce((b, i) => b + i.qty, 0), 0), exp: scopedExp(expFor([d])).reduce((a, e) => a + e.amount, 0) }; });
   const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 7);
   const lastWeek = scoped(salesOf(dayOf(yesterday))).reduce((a, x) => a + x.total, 0);
   const total = s.reduce((a, x) => a + x.total, 0), disc = s.reduce((a, x) => a + (x.discount ? x.discount.amount : 0), 0);
   const cost = s.reduce((a, x) => a + x.items.reduce((b, i) => b + i.cost * i.qty, 0), 0);
-  const exp = scopedExp(DB.expenses.filter(e => e.day === t)).reduce((a, e) => a + e.amount, 0);
+  const exp = scopedExp(expFor([t])).reduce((a, e) => a + e.amount, 0);
   const delta = lastWeek ? Math.round((total - lastWeek) / lastWeek * 100) : 0;
   const mine = me.role === "vendedor";
   const list = (mine ? s.filter(x => x.seller === me.id) : s).slice().sort((a, b) => b.at.localeCompare(a.at) || b.n - a.n);
@@ -1053,8 +1079,8 @@ function gastosView() {
   return topbar("Gastos", `Este mes: ${money(mt)}`, can("canExpense") ? `<button class="btn dark" data-act="newexp">${I.plus}<span class="hide-m">Registrar gasto</span></button>` : "") + `
   <div class="content">${partnerSeg()}${S.partner !== "all" ? `<div class="hint">Gastos propios de ${esc(partnerById(S.partner).name)} más su ${partnerById(S.partner).share} % de los gastos compartidos.</div>` : ""}<div class="grid-2">
     <section class="card"><div class="card-h"><h2>Movimientos</h2></div><div class="tbl-wrap"><table><thead><tr><th>Fecha</th><th>Categoría</th><th>Detalle</th><th>Socio</th><th>Registró</th><th class="r">Monto</th></tr></thead><tbody>
-    ${list.map(e => `<tr><td>${fmtD(e.at)}</td><td><span class="chip">${esc(e.cat)}</span></td><td>${esc(e.note)}</td><td>${partnerChip(e.partner || "shared")}</td><td>${esc(userById(e.by).name)}</td><td class="r"><b>${money(e.amount)}</b></td></tr>`).join("") || `<tr><td colspan="6" class="empty">Sin gastos</td></tr>`}</tbody></table></div></section>
-    <section class="card"><div class="card-h"><h2>Por categoría</h2><span class="hint">este mes</span></div><div class="card-b" style="display:flex;flex-direction:column;gap:14px">
+    ${list.map(e => `<tr><td>${fmtD(e.at)}</td><td><span class="chip">${esc(e.cat)}</span></td><td>${esc(e.note)}${e.spreadQty ? `<span class="s spread-s">${LI("calendar-range")} Prorrateado: ${spreadTxt(e)}</span>` : ""}</td><td>${partnerChip(e.partner || "shared")}</td><td>${esc(userById(e.by).name)}</td><td class="r"><b>${money(e.amount)}</b></td></tr>`).join("") || `<tr><td colspan="6" class="empty">Sin gastos</td></tr>`}</tbody></table></div></section>
+    <section class="card"><div class="card-h"><h2>Por categoría</h2><span class="hint">pagado este mes</span></div><div class="card-b" style="display:flex;flex-direction:column;gap:14px">
     ${byCat.map(x => `<div style="display:flex;flex-direction:column;gap:6px"><div class="row" style="padding:0;border:none"><span>${esc(x.c)}</span><b>${money(x.t)}</b></div><div class="bar"><i style="width:${x.t / mt * 100}%"></i></div></div>`).join("") || `<div class="empty">Sin gastos este mes</div>`}</div></section>
   </div></div>`;
 }
@@ -1064,15 +1090,37 @@ function newExpModal() {
   <div class="field"><label>Monto</label><input name="amount" type="number" min="1" required></div>
   <div class="field full"><label>¿De quién es el gasto?</label><select name="partner">${partnerOpts("shared", true)}</select></div>
   <div class="field full"><label>Detalle</label><input name="note" placeholder="Ej. Pago de luz noviembre" required></div>
+  <div class="field full exp-warn" id="expWarn" hidden>${LI("circle-alert")}<span>Las compras de prendas para vender no van aquí: registralas en <b>Inventario → Entrada</b> con su costo. Si las ponés como gasto, el estado de resultados las cuenta dos veces.</span></div>
+  ${CLOUD && CL.noSpread ? "" : `<div class="field full spread-box">
+    <label class="spread-tg"><span><b>Distribuir este gasto</b><small>Para alquiler, salarios, equipo… cada día carga solo su parte</small></span><span class="switch"><input type="checkbox" name="spread" id="spreadOn"><span></span></span></label>
+    <div class="spread-opts" id="spreadOpts" hidden>
+      <div class="field"><label>Durante</label><div class="spread-q"><input name="sq" type="number" min="1" max="3650" value="1"><select name="su"><option value="dias">días</option><option value="meses" selected>meses</option><option value="anios">años</option></select></div></div>
+      <div class="field"><label>Desde</label><input name="sf" type="date" value="${today()}"></div>
+      <div class="hint full" id="spreadHint"></div>
+    </div></div>`}
   <div class="field full"><label>Comprobante (foto)</label><input name="photo" type="file" accept="image/*" capture="environment"></div>
   <button class="btn dark lg full" type="submit">Guardar gasto</button></form>`, (f) => {
+    const sp = f.get("spread") ? { spreadQty: Math.max(1, Math.min(3650, +f.get("sq") || 1)), spreadUnit: f.get("su"), spreadFrom: f.get("sf") || today() } : null;
     if (CLOUD) return act(async () => {
       const file = f.get("photo"); let receipt_path = null;
       if (file && file.size) receipt_path = await uploadImg("receipts", `${me.id}/${Date.now()}.jpg`, await ART.compress(file, 1400));
-      await sbq(sb.from("expenses").insert({ category_id: CL.ecatId[f.get("cat")], amount: +f.get("amount"), note: f.get("note").trim(), partner_id: f.get("partner") === "shared" ? null : f.get("partner"), receipt_path }));
+      await sbq(sb.from("expenses").insert({ category_id: CL.ecatId[f.get("cat")], amount: +f.get("amount"), note: f.get("note").trim(), partner_id: f.get("partner") === "shared" ? null : f.get("partner"), receipt_path, ...(sp ? { spread_qty: sp.spreadQty, spread_unit: sp.spreadUnit, spread_from: sp.spreadFrom } : {}) }));
     }, "Gasto registrado");
-    DB.expenses.push({ id: uid(), at: new Date().toISOString(), day: today(), cat: f.get("cat"), amount: +f.get("amount"), note: f.get("note"), partner: f.get("partner"), by: me.id }); save(); render(); toast("Gasto registrado");
+    DB.expenses.push({ id: uid(), at: new Date().toISOString(), day: today(), cat: f.get("cat"), amount: +f.get("amount"), note: f.get("note"), partner: f.get("partner"), by: me.id, ...(sp || {}) }); save(); render(); toast("Gasto registrado");
   });
+  const warn = () => { $("#expWarn").hidden = !/mercader/i.test($("#f [name=cat]").value); };
+  $("#f [name=cat]").onchange = warn; warn();
+  if ($("#spreadOn")) {
+    const upd = () => {
+      $("#spreadOpts").hidden = !$("#spreadOn").checked;
+      const amt = +$("#f [name=amount]").value || 0, q = Math.max(1, +$("#f [name=sq]").value || 1), u = $("#f [name=su]").value, from = $("#f [name=sf]").value || today();
+      const sp = spreadSpan({ spreadQty: q, spreadUnit: u, spreadFrom: from, day: today() });
+      $("#spreadHint").innerHTML = amt ? `Se reparte en <b>${sp.n} días</b> (hasta el ${fmtD(addDaysS(sp.to, -1) + "T12:00:00")}): <b>${money(amt / sp.n)} por día</b>${u !== "dias" ? `, ${money(amt / (u === "anios" ? 12 * q : q))} por mes` : ""}.` : "Escribí el monto para ver cuánto le toca a cada día.";
+    };
+    ["#spreadOn", "#f [name=sq]", "#f [name=su]", "#f [name=sf]", "#f [name=amount]"].forEach(q => { $(q).oninput = upd; $(q).onchange = upd; });
+    $("#f [name=cat]").addEventListener("change", () => { if (/alquiler|salario/i.test($("#f [name=cat]").value) && !$("#spreadOn").checked) { $("#spreadOn").checked = true; upd(); } });
+    upd();
+  }
 }
 
 /* ---------- Reportes ---------- */
@@ -1083,7 +1131,7 @@ function rangeDays() {
 function repData() {
   const days = rangeDays(), set = new Set(days);
   const all = can("seeAllSales");
-  const s = scoped(DB.sales.filter(x => set.has(x.day) && x.status === "cerrada" && (all || x.seller === me.id))), e = all ? scopedExp(DB.expenses.filter(x => set.has(x.day))) : [];
+  const s = scoped(DB.sales.filter(x => set.has(x.day) && x.status === "cerrada" && (all || x.seller === me.id))), e = all ? scopedExp(expFor(days)) : [];
   const total = s.reduce((a, x) => a + x.total, 0), gross = s.reduce((a, x) => a + x.subtotal, 0), cost = s.reduce((a, x) => a + x.items.reduce((b, i) => b + i.cost * i.qty, 0), 0), exp = e.reduce((a, x) => a + x.amount, 0), disc = s.reduce((a, x) => a + (x.discount ? x.discount.amount : 0), 0);
   // líneas: el descuento de la factura se prorratea por línea según su peso
   const lines = []; s.forEach(x => { const f = x.subtotal ? x.total / x.subtotal : 1; x.items.forEach(i => lines.push({ ...i, sale: x, gross: i.price * i.qty, net: Math.round(i.price * i.qty * f), disc: Math.round(i.price * i.qty * (1 - f)), costT: i.cost * i.qty, partner: itemPartner(i), cat: (prodById(i.pid) || {}).cat || "—", brand: (prodById(i.pid) || {}).brand || "—" })); });
@@ -1121,11 +1169,11 @@ function erDetailModal(k) {
     body = list.map(x => row(esc(x.k), `${x.q} piezas · neto ${money(x.net)} − costo ${money(x.cost)} · margen ${Math.round(x.pct)} %`, money(x.margin), { cls: x.margin >= 0 ? "green" : "red" })).join("");
   } else if (k === "exp") {
     title = "Gastos operativos"; sum = -exp; sumLbl = `${e.length} ${e.length === 1 ? "pago" : "pagos"} en el período`;
-    body = e.slice().sort((a, b) => b.at.localeCompare(a.at)).map(x => row(esc(x.note || x.cat), `${fmtD(x.at)} · ${esc(x.cat)} · ${esc(partnerById(x.partner || "shared").name)} · registró ${esc(userById(x.by).name)}`, "− " + money(x.amount))).join("");
+    body = e.slice().sort((a, b) => b.at.localeCompare(a.at)).map(x => row(`${esc(x.note || x.cat)}${x.alloc ? ` <span class="chip spread">prorrateado</span>` : ""}`, x.alloc ? `${x.alloc.k} de ${x.alloc.n} días de un pago de ${money(x.alloc.full)} · ${esc(x.cat)} · ${esc(partnerById(x.partner || "shared").name)}` : `${fmtD(x.at)} · ${esc(x.cat)} · ${esc(partnerById(x.partner || "shared").name)} · registró ${esc(userById(x.by).name)}`, "− " + money(x.amount))).join("");
   } else {
     const gp = total - cost, np = gp - exp;
     title = "Utilidad neta"; sum = np; sumLbl = np >= 0 ? "lo que queda después de costos y gastos" : "los costos y gastos superan lo vendido";
-    const byDay = D.days.slice().reverse().map(d => { const sd = s.filter(x => x.day === d), n = sd.reduce((a, x) => a + x.total, 0), c = sd.reduce((a, x) => a + x.items.reduce((b, i) => b + i.cost * i.qty, 0), 0), g = e.filter(x => x.day === d).reduce((a, x) => a + x.amount, 0); return { d, n, c, g, u: n - c - g }; }).filter(x => x.n || x.g);
+    const byDay = D.days.slice().reverse().map(d => { const sd = s.filter(x => x.day === d), n = sd.reduce((a, x) => a + x.total, 0), c = sd.reduce((a, x) => a + x.items.reduce((b, i) => b + i.cost * i.qty, 0), 0), g = scopedExp(expFor([d])).reduce((a, x) => a + x.amount, 0); return { d, n, c, g, u: n - c - g }; }).filter(x => x.n || x.g);
     body = `<div class="er-eq"><span>Utilidad bruta</span><b>${money(gp)}</b><span>− Gastos operativos</span><b>− ${money(exp)}</b><span class="t">= Utilidad neta</span><b class="t ${np >= 0 ? "green" : "red"}">${money(np)}</b></div>` +
       (byDay.length > 1 ? `<div class="pl-grp" style="padding:12px 2px 4px">Día por día</div>` + byDay.map(x => row(fmtD(x.d + "T12:00:00"), `neto ${money(x.n)} − costo ${money(x.c)}${x.g ? ` − gastos ${money(x.g)}` : ""}`, money(x.u), { cls: x.u >= 0 ? "green" : "red" })).join("") : "");
   }
@@ -1167,7 +1215,7 @@ function repView() {
       <section class="card"><div class="card-h"><h2>Formas de pago</h2></div><div class="card-b" style="display:flex;flex-direction:column;gap:14px">${byPay.map(x => `<div style="display:flex;flex-direction:column;gap:6px"><div class="row" style="padding:0;border:none"><span>${esc(x.m)}</span><b>${money(x.t)} <span class="hint">${total ? (x.t / total * 100).toFixed(0) : 0} %</span></b></div><div class="bar"><i style="width:${total ? x.t / total * 100 : 0}%"></i></div></div>`).join("")}</div></section>
     </div>`;
   } else if (tab === "socios") {
-    const set = new Set(days), all = DB.sales.filter(x => set.has(x.day) && x.status === "cerrada"), allE = DB.expenses.filter(x => set.has(x.day));
+    const set = new Set(days), all = DB.sales.filter(x => set.has(x.day) && x.status === "cerrada"), allE = expFor(days);
     const rows = DB.partners.map(p => {
       const ps = all.map(x => scopeSale(x, p.id)).filter(Boolean);
       const gross = ps.reduce((a, x) => a + x.subtotal, 0), net = ps.reduce((a, x) => a + x.total, 0), c = ps.reduce((a, x) => a + x.items.reduce((b, i) => b + i.cost * i.qty, 0), 0);
