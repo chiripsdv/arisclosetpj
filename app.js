@@ -81,7 +81,7 @@ const SESSION = "aris-demo-session";
 let me = null;
 const role = () => DB.roles[me.role];
 const can = (k) => !!role()[k];
-function login(u) { me = u; sessionStorage.setItem(SESSION, u.id); location.hash = role().views[0]; render(); listenScanner(); }
+function login(u) { me = u; sessionStorage.setItem(SESSION, u.id); location.hash = role().views[0]; render(); listenScanner(); offerInstall(); }
 function logout() {
   me = null; sessionStorage.removeItem(SESSION); stopScanner(); location.hash = ""; S.cart = []; S.disc = null; closeModal();
   if (CLOUD) { cloudUnsubscribe(); CL.pending = null; DB = emptyDB(); sb.auth.signOut().catch(() => {}); }
@@ -209,7 +209,7 @@ async function cloudStart(user) {
     if (!me) return;
     CL.pending = null;
     if (!role().views.includes(location.hash.replace("#", ""))) location.hash = role().views[0];
-    render(); cloudSubscribe(); listenScanner();
+    render(); cloudSubscribe(); listenScanner(); offerInstall();
   } catch (e) { me = null; app.innerHTML = loginView(errMsg(e)); bindLogin(); }
 }
 function cloudPending() {
@@ -1547,7 +1547,8 @@ document.addEventListener("click", (e) => {
   else if (a === "unpair") { localStorage.removeItem(SCAN_KEY); stopScanner(); pairModal(); }
   else if (a === "copylink") { navigator.clipboard && navigator.clipboard.writeText(S.pairUrl || "").then(() => toast("Enlace copiado"), () => {}); }
   else if (a === "camscan") camScanModal();
-  else if (a === "install") doInstall();
+  else if (a === "install") { if (deferredInstall) { closeModal(); doInstall(); } else installSheet(); }
+  else if (a === "install-later") { try { localStorage.setItem(INSTALL_LATER, Date.now()); } catch {} closeSheet(); }
   else if (a === "stockin") stockInModal();
   else if (a === "newprod") newProdModal();
   else if (a === "newexp") newExpModal();
@@ -1596,12 +1597,39 @@ const lib = (src) => _libs[src] || (_libs[src] = new Promise((res, rej) => { con
 let deferredInstall = null;
 const isStandalone = () => matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
 const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
-window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); deferredInstall = e; if (!$("#modal-root").innerHTML) render(); });
+window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); deferredInstall = e; if (!$("#modal-root").innerHTML) { if (me) render(); else if (!scannerParams()) { /* login: solo refresca el pie */ const f = $(".lg-foot"); if (f && !f.querySelector(".install-btn")) f.insertAdjacentHTML("beforeend", installHTML()); } } if (me) offerInstall(); });
+// ---------- Invitación a instalar (teléfono) ----------
+// Ningún navegador permite instalar sin que la persona lo confirme, así que se lo ofrecemos
+// con un botón de un toque (Android) o con los pasos ilustrados (iPhone).
+const INSTALL_LATER = "aris-install-later";
+const isAndroid = /android/i.test(navigator.userAgent);
+const isPhone = () => matchMedia("(max-width:900px)").matches || matchMedia("(pointer:coarse)").matches;
+let installOffered = false;
+function offerInstall(force) {
+  if (isStandalone() || !me || (installOffered && !force)) return;
+  if (!force) { if (!isPhone()) return; try { if (Date.now() - (+localStorage.getItem(INSTALL_LATER) || 0) < 3 * 864e5) return; } catch {} }
+  if (!force && !deferredInstall && !isIOS && !isAndroid) return;
+  installOffered = true;
+  setTimeout(() => { if (!$("#modal-root").innerHTML && me && !isStandalone()) installSheet(); else installOffered = false; }, force ? 0 : 1500);
+}
+function installSheet() {
+  const step = (n, icon, html) => `<li><span class="is-n">${n}</span><span class="is-ico">${LI(icon)}</span><span>${html}</span></li>`;
+  const how = deferredInstall ? `<button class="btn is-go" data-act="install">${LI("square-plus")} Instalar ahora</button><p class="is-note">Es gratis, no ocupa casi espacio y no pasa por ninguna tienda de apps.</p>`
+    : isIOS ? `<ol class="is-steps">${step(1, "share", `Tocá <b>Compartir</b> (el cuadrito con la flecha). En los iPhone más nuevos está dentro del botón <b>···</b> de abajo`)}${step(2, "square-plus", `Deslizá y elegí <b>Agregar a inicio</b>`)}${step(3, "house", `Tocá <b>Agregar</b>. ¡Listo! Ya queda en tu pantalla`)}</ol><div class="is-arrow" aria-hidden="true">${LI("share")}<span>Barra de Safari, abajo</span></div>`
+    : `<ol class="is-steps">${step(1, "ellipsis-vertical", `Tocá el menú <b>⋮</b> arriba a la derecha del navegador`)}${step(2, "square-plus", `Elegí <b>Instalar app</b> o <b>Agregar a pantalla principal</b>`)}${step(3, "house", `Confirmá con <b>Instalar</b>. ¡Listo!`)}</ol>`;
+  $("#modal-root").innerHTML = `<div class="overlay sheet-ov"><div class="sheet install-sheet" role="dialog" aria-modal="true" aria-label="Instalar la app">
+    <div class="sheet-grab" aria-hidden="true"></div>
+    <div class="is-head"><img src="icons/icon-192.png" alt="" class="is-icon"><div><h3>Instalá ${esc(DB.settings.store)}</h3><p>Tenela en tu pantalla de inicio, como cualquier app.</p></div></div>
+    <div class="is-perks"><span>${LI("zap")}Abre al instante</span><span>${LI("maximize")}Pantalla completa</span><span>${LI("house")}Un toque desde el inicio</span></div>
+    ${how}
+    <button class="btn ghost is-later" data-act="install-later">Ahora no</button>
+  </div></div>`;
+  document.body.classList.add("lock");
+}
 window.addEventListener("appinstalled", () => { deferredInstall = null; toast("App instalada"); render(); });
 function installHTML() {
   if (isStandalone()) return "";
-  if (deferredInstall) return `<button class="btn block install-btn" data-act="install">${I.install} Instalar app</button>`;
-  if (isIOS) return `<p class="hint install-ios">${I.install} Para instalar en iPhone: tocá <b>Compartir</b> y luego <b>Agregar a inicio</b>.</p>`;
+  if (deferredInstall || isIOS || isAndroid) return `<button class="btn block install-btn" data-act="install">${I.install} Instalar app</button>`;
   return "";
 }
 async function doInstall() { if (!deferredInstall) return; deferredInstall.prompt(); try { await deferredInstall.userChoice; } catch {} deferredInstall = null; render(); }

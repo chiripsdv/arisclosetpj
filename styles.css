@@ -987,3 +987,27 @@ svg.li{width:20px;height:20px;flex-shrink:0;stroke-width:1.9}
 .pl-t b{font-size:14px;font-weight:600}
 .pl-t small{font-size:12px;color:var(--muted)}
 .pl-row .switch,.pl-row .qty,.pl-row .chip{flex-shrink:0}.u-btns .btn.danger{border:1px solid #F2B8C0;color:var(--red);background:#fff}
+
+/* Invitación a instalar */
+.install-sheet{gap:16px}
+.is-head{display:flex;align-items:center;gap:14px}
+.is-icon{width:64px;height:64px;border-radius:16px;box-shadow:0 8px 20px -8px rgba(120,30,45,.45),0 0 0 1px var(--line);background:#fff;object-fit:cover;flex-shrink:0}
+.is-head h3{margin:0;font-size:19px}
+.is-head p{margin:2px 0 0;font-size:13px;color:var(--muted)}
+.is-perks{display:flex;gap:8px;flex-wrap:wrap}
+.is-perks span{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;padding:7px 11px;border-radius:999px;background:#FFF4F5;color:#9A1A2B;border:1px solid #F7D6DA}
+.is-perks svg.li{width:14px;height:14px}
+.is-go{height:54px;border:0;border-radius:16px;font-size:16px;font-weight:700;color:#fff;justify-content:center;gap:8px;background:linear-gradient(135deg,#FF3D57 0%,#D6001C 55%,#B00018 100%);box-shadow:0 12px 24px -10px rgba(214,0,28,.65);animation:isPulse 2.2s ease-in-out infinite}
+.is-go svg.li{width:20px;height:20px}
+@keyframes isPulse{0%,100%{box-shadow:0 12px 24px -10px rgba(214,0,28,.65)}50%{box-shadow:0 12px 30px -6px rgba(214,0,28,.8),0 0 0 6px rgba(214,0,28,.1)}}
+.is-note{margin:-6px 0 0;text-align:center;font-size:12px;color:var(--muted)}
+.is-steps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
+.is-steps li{display:flex;align-items:center;gap:12px;padding:12px;border-radius:16px;border:1px solid var(--line);font-size:14px;line-height:1.35}
+.is-n{width:24px;height:24px;border-radius:50%;background:var(--ink);color:#fff;font-size:12px;font-weight:700;display:grid;place-items:center;flex-shrink:0}
+.is-ico{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;background:#FFF4F5;color:var(--red);flex-shrink:0}
+.is-ico svg.li{width:20px;height:20px}
+.is-arrow{display:flex;flex-direction:column;align-items:center;gap:4px;color:var(--red);font-size:12px;font-weight:700;animation:isBounce 1.4s ease-in-out infinite}
+.is-arrow svg.li{width:22px;height:22px}
+@keyframes isBounce{0%,100%{transform:translateY(0)}50%{transform:translateY(6px)}}
+.is-later{height:44px;color:var(--muted)}
+@media (prefers-reduced-motion:reduce){.is-go,.is-arrow{animation:none}}
