@@ -1,6 +1,6 @@
 // Service worker: cachea la app para que abra sin internet.
 // Solo maneja archivos propios: la conexión del escáner (otro dominio) pasa directo.
-const CACHE = "aris-v53";
+const CACHE = "aris-v55";
 const FILES = ["./", "./index.html", "./styles.css", "./app.js", "./data.js", "./config.js", "./vendor/supabase.js", "./vendor/lucide.js", "./art.js", "./manifest.json",
   "./icons/logo.png", "./icons/logo-t.png", "./icons/logo-receipt.png", "./icons/logo-w.png", "./icons/mono-w.png", "./icons/mono.png", "./icons/logo-c.png", "./icons/icon-192.png", "./icons/icon-512.png",
   "./vendor/html5-qrcode.min.js", "./vendor/JsBarcode.all.min.js", "./vendor/qrcode.js"];

@@ -23,6 +23,7 @@ function load() {
 // Asegura campos nuevos en datos guardados (socios, códigos de barra, ajustes)
 function migrate() {
   DB.cash = DB.cash || { sessions: [], moves: [] };
+  (DB.sales || []).forEach(applyReturns);
   DB.partners = DB.partners || JSON.parse(JSON.stringify(window.SEED.partners));
   DB.settings = Object.assign({ waCountry: "505", relay: DEFAULT_RELAY, paper: "80", rcLogo: true, rcAddress: "", rcPhone: "", rcRuc: "", rcFooter: "¡Gracias por tu compra!\nCambios dentro de 8 días con este recibo." }, DB.settings);
   DB.products.forEach(p => { if (!p.partner) p.partner = DB.partners[0].id; });
@@ -126,6 +127,12 @@ const photoUrl = (path) => path ? sb.storage.from("product-photos").getPublicUrl
 const one = (x) => Array.isArray(x) ? x[0] : x;
 const ROLE_ORDER = ["propietaria", "admin", "vendedor"];
 
+// Ventas con sus devoluciones. Si falta el script 0009, se cargan sin devoluciones.
+async function loadSales(sinceDay) {
+  const q = (sel) => sbAll(() => sb.from("sales").select(sel).gte("day", sinceDay).order("created_at").order("id"));
+  try { const r = await q("*, sale_items(*, sale_item_costs(unit_cost)), sale_returns(*)"); CL.noReturns = false; return r; }
+  catch (e) { if (!/sale_returns|relationship|PGRST/i.test(String(e && (e.message || e.code)))) throw e; CL.noReturns = true; return q("*, sale_items(*, sale_item_costs(unit_cost))"); }
+}
 // Gastos del período más los prorrateados (aunque se hayan pagado antes). Si falta el script 0007, sigue sin prorrateo.
 async function loadExpenses(sinceDay) {
   try { const r = await sbAll(() => sb.from("expenses").select("*").or(`day.gte.${sinceDay},spread_qty.not.is.null`).order("created_at").order("id")); CL.noSpread = false; return r; }
@@ -145,7 +152,7 @@ async function cloudLoad() {
     sbq(sb.from("expense_categories").select("*").order("sort").order("id")),
     sbq(sb.from("discount_codes").select("*").eq("active", true).order("created_at")),
     sbAll(() => sb.from("products").select("*, product_costs(cost), variants(*)").eq("active", true).order("created_at").order("id")),
-    sbAll(() => sb.from("sales").select("*, sale_items(*, sale_item_costs(unit_cost))").gte("day", sinceDay).order("created_at").order("id")),
+    loadSales(sinceDay),
     sbAll(() => sb.from("stock_moves").select("*, sales(number)").gte("created_at", since.toISOString()).order("id")),
     loadExpenses(sinceDay),
     cashRefresh()
@@ -167,7 +174,8 @@ async function cloudLoad() {
     variants: (p.variants || []).filter(v => v.active).sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id)).map(v => ({ id: v.id, size: v.size, color: v.color, code: v.barcode, stock: v.stock })) }));
   D.sales = sales.map(s => ({ id: s.id, n: +s.number, at: s.created_at, day: s.day, seller: s.seller_id, subtotal: +s.subtotal, total: +s.total, pay: s.payment_method, status: s.status, phone: s.customer_phone || "",
     discount: s.discount_type ? { type: s.discount_type, pct: +s.discount_pct, amount: +s.discount_amount, code: s.discount_code, by: s.authorized_by } : null,
-    items: (s.sale_items || []).map(i => ({ pid: i.product_id, vid: i.variant_id, partner: i.partner_id, name: i.name, size: i.size, color: i.color, qty: i.qty, price: +i.price, cost: one(i.sale_item_costs) ? +one(i.sale_item_costs).unit_cost : 0 })) }));
+    items: (s.sale_items || []).map(i => ({ iid: i.id, pid: i.product_id, vid: i.variant_id, partner: i.partner_id, name: i.name, size: i.size, color: i.color, qty: i.qty, price: +i.price, net: +i.net_total, cost: one(i.sale_item_costs) ? +one(i.sale_item_costs).unit_cost : 0 })),
+    returns: (s.sale_returns || []).sort((a, b) => a.created_at.localeCompare(b.created_at)).map(r => ({ id: r.id, at: r.created_at, day: r.day, by: r.user_id, reason: r.reason, refund: r.refund_method, amount: +r.amount, items: (r.items || []).map(x => ({ key: x.sale_item_id, qty: +x.qty, amount: +x.amount })) })) })).map(applyReturns);
   D.moves = moves.map(m => ({ id: m.id, at: m.created_at, vid: m.variant_id, partner: m.partner_id, type: m.type, qty: m.qty, by: m.user_id, ref: m.sales ? m.sales.number : null, note: m.note }));
   D.expenses = exps.map(e => ({ id: e.id, at: e.created_at, day: e.day, cat: CL.ecatName[e.category_id] || "", amount: +e.amount, note: e.note, partner: e.partner_id || "shared", by: e.user_id, receipt: e.receipt_path, spreadQty: e.spread_qty || null, spreadUnit: e.spread_unit || null, spreadFrom: e.spread_from || null }));
   // Variantes de productos dados de baja: siguen apareciendo en ventas y kárdex
@@ -202,7 +210,8 @@ function cloudSubscribe() {
   const on = (ch, table) => ch.on("postgres_changes", { event: "*", schema: "public", table }, (p) => { if (table === "sales" && p.eventType === "INSERT" && p.new && p.new.id) CL.newSales.push(p.new.id); cloudSoon(); });
   CL.rt = ["sales", "variants", "expenses"].reduce(on, sb.channel("tienda")).subscribe();
   // La caja va en otro canal: si falta el script 0008, no afecta al resto
-  if (!CL.noCash) CL.rtCash = ["cash_sessions", "cash_moves"].reduce((ch, table) => ch.on("postgres_changes", { event: "*", schema: "public", table }, () => cloudSoon()), sb.channel("caja")).subscribe();
+  const extra = [...(CL.noCash ? [] : ["cash_sessions", "cash_moves"]), ...(CL.noReturns ? [] : ["sale_returns"])];
+  if (extra.length) CL.rtCash = extra.reduce((ch, table) => ch.on("postgres_changes", { event: "*", schema: "public", table }, () => cloudSoon()), sb.channel("caja")).subscribe();
 }
 function cloudUnsubscribe() { if (CL.rt) { sb.removeChannel(CL.rt); CL.rt = null; } if (CL.rtCash) { sb.removeChannel(CL.rtCash); CL.rtCash = null; } }
 document.addEventListener("visibilitychange", () => { if (CLOUD && me && document.visibilityState === "visible") cloudSoon(100); });
@@ -596,16 +605,17 @@ function saleDetailModal(id) {
   const split = DB.partners.length > 1 && can("seeAllSales") ? DB.partners.map(p => ({ p, v: scopeSale(x, p.id) })).filter(o => o.v) : [];
   const cost = x.items.reduce((a, i) => a + i.cost * i.qty, 0);
   modal(`<div class="modal-h"><div><h3>Factura #${x.n}</h3><div class="hint">${fmtDL(new Date(x.at))} · ${fmtT(x.at)}</div></div><button class="btn icon ghost" data-close>${I.x}</button></div>
-    <div class="sd-meta"><span class="who"><span class="avatar ${avatarCls(x.seller)}">${esc(userById(x.seller).name[0])}</span>${esc(userById(x.seller).name)}</span><span class="chip">${esc(x.pay)}</span>${x.discount ? discChip(x.discount) : ""}${x.status !== "cerrada" ? `<span class="chip red">${esc(x.status)}</span>` : ""}</div>
-    <div class="sd-items">${x.items.map(i => `<div class="cart-item">${ART.thumb(prodById(i.pid) || { cat: "" }, "sm")}<div class="i"><b>${esc(i.name)}</b><span>${esc(i.size)} · ${esc(i.color)} · ${i.qty} × ${money(i.price)}${split.length > 1 ? ` · ${esc(partnerById(itemPartner(i)).name)}` : ""}</span></div><b class="sd-amt">${money(i.price * i.qty)}</b></div>`).join("")}</div>
+    <div class="sd-meta"><span class="who"><span class="avatar ${avatarCls(x.seller)}">${esc(userById(x.seller).name[0])}</span>${esc(userById(x.seller).name)}</span><span class="chip">${esc(x.pay)}</span>${x.discount ? discChip(x.discount) : ""}${x.status !== "cerrada" ? `<span class="chip red">${x.status === "devuelta" ? "devuelta completa" : esc(x.status)}</span>` : ""}${x.refunded ? `<span class="chip warn">con devolución</span>` : ""}</div>
+    <div class="sd-items">${(x.orig ? x.orig.items : x.items).map(i => `<div class="cart-item ${i.returned === i.qty ? "ret-all" : ""}">${ART.thumb(prodById(i.pid) || { cat: "" }, "sm")}<div class="i"><b>${esc(i.name)}${i.returned ? ` <span class="chip warn">devuelta${i.qty > 1 ? "s " + i.returned + " de " + i.qty : ""}</span>` : ""}</b><span>${esc(i.size)} · ${esc(i.color)} · ${i.qty} × ${money(i.price)}${split.length > 1 ? ` · ${esc(partnerById(itemPartner(i)).name)}` : ""}</span></div><b class="sd-amt">${money(i.price * i.qty)}</b></div>`).join("")}</div>
     <div class="totals" style="padding:0 2px">
-      <div><span>${x.items.reduce((a, i) => a + i.qty, 0)} artículos · subtotal</span><span>${money(x.subtotal)}</span></div>
-      ${x.discount ? `<div class="d"><span>Descuento ${x.discount.pct} %${x.discount.type === "pin" ? " · autorizó " + esc(userById(x.discount.by).name) : x.discount.type === "codigo" ? " · código " + esc(x.discount.code) : ""}</span><span>− ${money(x.discount.amount)}</span></div>` : ""}
-      <div class="sd-total"><span>Total</span><span>${money(x.total)}</span></div>
+      <div><span>${(x.orig || x).items.reduce((a, i) => a + i.qty, 0)} artículos · subtotal</span><span>${money((x.orig || x).subtotal)}</span></div>
+      ${(x.orig || x).discount ? `<div class="d"><span>Descuento ${(x.orig || x).discount.pct} %${(x.orig || x).discount.type === "pin" ? " · autorizó " + esc(userById((x.orig || x).discount.by).name) : (x.orig || x).discount.type === "codigo" ? " · código " + esc((x.orig || x).discount.code) : ""}</span><span>− ${money((x.orig || x).discount.amount)}</span></div>` : ""}
+      ${x.refunded ? `<div><span>Total facturado</span><span>${money(x.orig.total)}</span></div><div class="d"><span>Devoluciones</span><span>− ${money(x.refunded)}</span></div>` : ""}<div class="sd-total"><span>${x.refunded ? "Total que queda" : "Total"}</span><span>${money(x.total)}</span></div>
       ${showCost ? `<div><span>Costo de la mercadería</span><span>${money(cost)}</span></div><div><span>Margen</span><span style="color:var(--green);font-weight:600">${money(x.total - cost)} · ${x.total ? Math.round((x.total - cost) / x.total * 100) : 0} %</span></div>` : ""}
     </div>
     ${split.length > 1 ? `<div class="split">${split.map(o => `<span class="who">${pDot(o.p.id)}${esc(o.p.name)} <b>${money(o.v.total)}</b></span>`).join("")}</div>` : ""}
-    <div class="ticket-actions"><button class="btn" data-act="print" data-sale="${x.id}">${I.print} Reimprimir</button><button class="btn red" data-act="reticket" data-sale="${x.id}">${I.wa} Enviar factura</button>${can("canVoid") && x.status === "cerrada" ? `<button class="btn ghost" data-act="void" data-sale="${x.id}">Anular venta</button>` : ""}</div>`);
+    <div class="ticket-actions"><button class="btn" data-act="print" data-sale="${x.id}">${I.print} Reimprimir</button><button class="btn red" data-act="reticket" data-sale="${x.id}">${I.wa} Enviar factura</button>${can("canVoid") && x.status === "cerrada" && !(CLOUD && CL.noReturns) ? `<button class="btn" data-act="return" data-sale="${x.id}">${LI("circle-off")} Devolver piezas</button>` : ""}${can("canVoid") && x.status === "cerrada" && !x.refunded ? `<button class="btn ghost" data-act="void" data-sale="${x.id}">Anular venta</button>` : ""}</div>
+    ${(x.returns || []).length ? `<div class="pl-grp">Devoluciones</div><div class="cz-moves">${x.returns.map(r => `<div class="cz-mv"><span>${r.items.reduce((a, it) => a + it.qty, 0)} ${r.items.reduce((a, it) => a + it.qty, 0) === 1 ? "pieza" : "piezas"} · ${esc(r.reason || "sin motivo")}<small>${fmtD(r.at)} ${fmtT(r.at)} · ${esc(userById(r.by).name)} · ${REFUND[r.refund] || r.refund}</small></span><b class="neg">− ${money(r.amount)}</b></div>`).join("")}</div>` : ""}`);
 }
 // Anular: devuelve las prendas al stock y la venta deja de contar en caja y reportes
 function voidModal(id) {
@@ -946,13 +956,16 @@ function stockInModal(preVid) {
   <div class="field full"><label for="siCode">Código de barras</label><div class="phone-in"><span>${I.barcode}</span><input id="siCode" inputmode="numeric" placeholder="Escaneá con el celular o escribí el código y Enter"></div></div>
   <div class="field full"><label for="siVid">Producto y variante</label><select name="vid" id="siVid" required>${optsFor(pid0, preVid)}</select></div>
   <div class="field"><label>Cantidad</label><input name="qty" type="number" min="1" value="1" required></div>
-  <div class="field"><label>Motivo</label><select name="type"><option value="compra">Compra a proveedor</option><option value="ajuste">Ajuste de inventario</option><option value="devolucion">Devolución de cliente</option></select></div>
+  <div class="field"><label>Motivo</label><select name="type"><option value="compra">Compra a proveedor</option><option value="ajuste">Ajuste: sumar unidades</option><option value="ajuste-">Ajuste: quitar unidades</option></select></div>
+  <div class="hint full">¿Una clienta devolvió una prenda? Hacelo desde su factura (Panel o Reportes → Facturas → <b>Devolver piezas</b>) para que se descuente de la venta.</div>
   <button class="btn dark lg full" type="submit">Guardar entrada</button></form>`, (f) => {
     const r = varById(f.get("vid")); if (!r) { toast("Elegí una variante", true); return false; }
-    const q = +f.get("qty");
-    if (CLOUD) return act(() => sbq(sb.rpc("stock_in", { p_variant: r.v.id, p_qty: q, p_type: f.get("type"), p_note: null })), `+${q} ${r.p.name} ${r.v.size} ${r.v.color} · ${partnerById(r.p.partner).name}`);
+    const neg = f.get("type") === "ajuste-", type = neg ? "ajuste" : f.get("type"), q = (neg ? -1 : 1) * Math.abs(+f.get("qty"));
+    if (r.v.stock + q < 0) { toast(`Solo hay ${r.v.stock} en stock`, true); return false; }
+    const msg = `${q > 0 ? "+" : "−"}${Math.abs(q)} ${r.p.name} ${r.v.size} ${r.v.color} · ${partnerById(r.p.partner).name}`;
+    if (CLOUD) return act(() => sbq(sb.rpc("stock_in", { p_variant: r.v.id, p_qty: q, p_type: type, p_note: neg ? "Ajuste: quitar unidades" : null })), msg);
     r.v.stock += q;
-    DB.moves.push({ id: uid(), at: new Date().toISOString(), vid: r.v.id, partner: r.p.partner, type: f.get("type"), qty: q, by: me.id }); save(); render(); toast(`+${q} ${r.p.name} ${r.v.size} ${r.v.color} · ${partnerById(r.p.partner).name}`);
+    DB.moves.push({ id: uid(), at: new Date().toISOString(), vid: r.v.id, partner: r.p.partner, type, qty: q, by: me.id }); save(); render(); toast(msg);
   });
   $("#siPartner").onchange = (e) => { $("#siVid").innerHTML = optsFor(e.target.value); };
   $("#siCode").onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); const r = findByCode(e.target.value); if (r) selectStockVariant(r); else toast(`Código ${e.target.value} no registrado`, true); } };
@@ -1083,6 +1096,61 @@ function newProdModal() {
   codeFieldKeys();
 }
 
+/* ---------- Devoluciones desde la factura ----------
+   La factura guarda lo original (x.orig) y la app trabaja con lo que quedó vendido:
+   piezas menos devueltas y total menos lo reembolsado. Así panel, reportes y caja cuadran solos. */
+function applyReturns(x) {
+  if (!x.returns || !x.returns.length) return x;
+  if (!x.orig) x.orig = { items: x.items.map((i, k) => ({ ...i, key: i.iid || "i" + k })), total: x.total, subtotal: x.subtotal, discount: x.discount ? { ...x.discount } : null, status: x.status };
+  const back = {}; x.returns.forEach(r => r.items.forEach(it => { back[it.key] = (back[it.key] || 0) + it.qty; }));
+  x.orig.items.forEach(i => { i.returned = back[i.key] || 0; });
+  x.items = x.orig.items.map(i => ({ ...i, qty: i.qty - i.returned })).filter(i => i.qty > 0);
+  x.refunded = Math.round(x.returns.reduce((a, r) => a + r.amount, 0) * 100) / 100;
+  x.total = Math.max(0, Math.round((x.orig.total - x.refunded) * 100) / 100);
+  x.subtotal = x.items.reduce((a, i) => a + i.price * i.qty, 0);
+  x.discount = x.orig.discount ? { ...x.orig.discount, amount: Math.max(0, Math.round((x.subtotal - x.total) * 100) / 100) } : null;
+  x.status = x.orig.status === "cerrada" && !x.items.length ? "devuelta" : x.orig.status;
+  return x;
+}
+const REFUND = { efectivo: "Efectivo de la caja", cambio: "Cambio por otra prenda", otro: "Transferencia u otro" };
+// Lo que se pagó por q piezas de una línea (con el descuento de la factura repartido)
+function lineRefund(x, i, q) {
+  const o = x.orig || x, net = i.net != null ? i.net : i.price * i.qty * (o.subtotal ? o.total / o.subtotal : 1), done = i.returned || 0;
+  return done + q === i.qty ? Math.round((net - Math.round(net * done / i.qty * 100) / 100) * 100) / 100 : Math.round(net * q / i.qty * 100) / 100;
+}
+function returnModal(id) {
+  const x = DB.sales.find(s => s.id === id); if (!x) return;
+  const items = (x.orig ? x.orig.items : x.items.map((i, k) => ({ ...i, key: i.iid || "i" + k, returned: 0 }))).filter(i => i.qty - (i.returned || 0) > 0);
+  const c = cashNow(), cashOpen = !c || c.open;
+  modal(`<div class="modal-h"><div><h3>Devolver piezas · Factura #${x.n}</h3><div class="hint">${fmtD(x.at)} · ${esc(userById(x.seller).name)} · ${esc(x.pay)}</div></div><button class="btn icon ghost" data-close>${I.x}</button></div>
+    <form id="f" class="form">
+      <div class="full rt-list">${items.map(i => { const left = i.qty - (i.returned || 0); return `<div class="rt-row">${ART.thumb(prodById(i.pid) || { cat: "" }, "sm")}<span class="rt-main"><b>${esc(i.name)}</b><small>${esc(i.size)} · ${esc(i.color)} · ${money(lineRefund(x, i, 1))} c/u${i.returned ? ` · ya devueltas ${i.returned}` : ""}</small></span>
+        <span class="qty rt-q"><button type="button" data-rq="-1">−</button><input data-rkey="${esc(i.key)}" data-max="${left}" type="number" min="0" max="${left}" value="${items.length === 1 && left === 1 ? 1 : 0}" inputmode="numeric"><button type="button" data-rq="1">+</button></span></div>`; }).join("")}</div>
+      <div class="field full"><label>¿Cómo se le devuelve el dinero?</label><select name="refund">
+        <option value="efectivo" ${cashOpen ? "" : "disabled"}>${REFUND.efectivo}${cashOpen ? "" : " (abrí la caja)"}</option>
+        <option value="cambio" ${cashOpen ? "" : "selected"}>${REFUND.cambio}</option><option value="otro">${REFUND.otro}</option></select></div>
+      <div class="field full"><label>Motivo</label><input name="reason" required placeholder="Ej. No le quedó la talla"></div>
+      <div class="full cz-count"><span>Se le devuelve</span><b id="rtTotal">${money(0)}</b></div>
+      <div class="hint full">Las piezas vuelven al inventario y la factura baja su total. Si es en efectivo, sale de la caja.</div>
+      <button class="btn dark lg full">Registrar devolución</button>
+    </form>`, f => {
+    const sel = [...document.querySelectorAll("[data-rkey]")].map(inp => ({ key: inp.dataset.rkey, qty: Math.min(+inp.dataset.max, Math.max(0, Math.floor(+inp.value || 0))) })).filter(r => r.qty > 0);
+    if (!sel.length) { toast("Elegí cuántas piezas se devuelven", true); return false; }
+    const refund = f.get("refund"), reason = f.get("reason").trim(), units = sel.reduce((a, r) => a + r.qty, 0);
+    const msg = `Devolución registrada: ${units} ${units === 1 ? "pieza" : "piezas"}`;
+    if (CLOUD) return act(() => sbq(sb.rpc("return_items", { p_sale: id, p_items: sel.map(r => ({ item_id: r.key, qty: r.qty })), p_reason: reason, p_refund: refund })), msg).then(ok => { if (ok) setTimeout(() => saleDetailModal(id), 0); return ok; });
+    // demo
+    const base = items.reduce((m, i) => (m[i.key] = i, m), {}); let amount = 0; const its = [];
+    sel.forEach(r => { const i = base[r.key], a = lineRefund(x, i, r.qty); amount += a; its.push({ key: r.key, qty: r.qty, amount: a }); const v = varById(i.vid); if (v) v.v.stock += r.qty; DB.moves.push({ id: uid(), at: new Date().toISOString(), vid: i.vid, partner: i.partner, type: "devolucion", qty: r.qty, by: me.id, ref: x.n, note: reason }); });
+    if (!x.orig) applyReturns(Object.assign(x, { returns: [{ items: [], amount: 0 }] })), x.returns = [];
+    x.returns.push({ id: uid(), at: new Date().toISOString(), day: today(), by: me.id, reason, refund, amount: Math.round(amount * 100) / 100, items: its });
+    applyReturns(x); save(); render(); toast(msg); setTimeout(() => saleDetailModal(id), 0);
+  });
+  const upd = () => { let t = 0; document.querySelectorAll("[data-rkey]").forEach(inp => { const q = Math.min(+inp.dataset.max, Math.max(0, Math.floor(+inp.value || 0))); if (q) t += lineRefund(x, items.find(i => i.key === inp.dataset.rkey), q); inp.closest(".rt-row").classList.toggle("on", q > 0); }); $("#rtTotal").textContent = money(t); };
+  $(".rt-list").addEventListener("click", (e) => { const b = e.target.closest("[data-rq]"); if (!b) return; const inp = b.parentNode.querySelector("input"); inp.value = Math.min(+inp.dataset.max, Math.max(0, (+inp.value || 0) + +b.dataset.rq)); upd(); });
+  $(".rt-list").addEventListener("input", upd); upd();
+}
+
 /* ---------- Caja: apertura, retiros/ingresos, arqueo y cierre ----------
    Efectivo esperado = fondo + ventas en efectivo + ingresos − retiros − gastos pagados con la caja.
    Quien no ve todas las ventas cuenta "a ciegas": no ve el esperado ni la diferencia. */
@@ -1093,12 +1161,13 @@ const cashSee = () => can("seeAllSales");
 // --- versión demo (se guarda en el navegador) ---
 function cashLocalCalc(sx) {
   const until = sx.closedAt || new Date().toISOString();
-  const inRange = DB.sales.filter(x => x.status === "cerrada" && x.at >= sx.openedAt && x.at <= until);
-  const cashS = inRange.filter(x => isCashPay(x.pay)), mv = (DB.cash.moves || []).filter(m => m.session === sx.id);
+  const inRange = DB.sales.filter(x => (x.status === "cerrada" || x.status === "devuelta") && x.at >= sx.openedAt && x.at <= until);
+  const cashS = inRange.filter(x => isCashPay(x.pay)).map(x => x.orig ? { ...x, total: x.orig.total } : x), mv = (DB.cash.moves || []).filter(m => m.session === sx.id);
   const other = {}; inRange.filter(x => !isCashPay(x.pay)).forEach(x => { other[x.pay] = other[x.pay] || { method: x.pay, total: 0, n: 0 }; other[x.pay].total += x.total; other[x.pay].n++; });
   const r = { opening: sx.opening, cash_sales: cashS.reduce((a, x) => a + x.total, 0), cash_sales_n: cashS.length, ins: mv.filter(m => m.type === "ingreso").reduce((a, m) => a + m.amount, 0),
     outs: mv.filter(m => m.type === "retiro").reduce((a, m) => a + m.amount, 0), expenses: DB.expenses.filter(e => e.cashSession === sx.id).reduce((a, e) => a + e.amount, 0), other: Object.values(other).sort((a, b) => b.total - a.total) };
-  r.expected = r.opening + r.cash_sales + r.ins - r.outs - r.expenses;
+  r.refunds = DB.sales.flatMap(x => x.returns || []).filter(rt => rt.refund === "efectivo" && rt.at >= sx.openedAt && rt.at <= until).reduce((a, rt) => a + rt.amount, 0);
+  r.expected = r.opening + r.cash_sales + r.ins - r.outs - r.expenses - r.refunds;
   return r;
 }
 function cashLocalStatus() {
@@ -1128,6 +1197,7 @@ function cashModal() {
       ${c.ins ? line("+ Ingresos a la caja", money(c.ins)) : ""}
       ${c.outs ? line("− Retiros", "− " + money(c.outs), "neg") : ""}
       ${c.expenses ? line("− Gastos pagados con la caja", "− " + money(c.expenses), "neg") : ""}
+      ${c.refunds ? line("− Devoluciones en efectivo", "− " + money(c.refunds), "neg") : ""}
       ${line("= Efectivo que debería haber", money(c.expected), "tot")}
     </div>
     ${(c.other || []).length ? `<div class="cz-other"><span class="hint">No están en la gaveta:</span>${c.other.map(o => `<span class="chip">${esc(o.method)} · ${money(o.total)}</span>`).join("")}</div>` : ""}
@@ -1217,7 +1287,7 @@ function cashSessionModal(id) {
     <div class="cz">
       <div class="cz-row"><span>Fondo inicial</span><b>${money(x.opening)}</b></div>
       <div class="cz-row"><span>+ Ventas en efectivo <small>${c.cash_sales_n || 0} ${(c.cash_sales_n || 0) === 1 ? "factura" : "facturas"}</small></span><b>${money(c.cash_sales || 0)}</b></div>
-      ${c.ins ? `<div class="cz-row"><span>+ Ingresos</span><b>${money(c.ins)}</b></div>` : ""}${c.outs ? `<div class="cz-row neg"><span>− Retiros</span><b>− ${money(c.outs)}</b></div>` : ""}${c.expenses ? `<div class="cz-row neg"><span>− Gastos con la caja</span><b>− ${money(c.expenses)}</b></div>` : ""}
+      ${c.ins ? `<div class="cz-row"><span>+ Ingresos</span><b>${money(c.ins)}</b></div>` : ""}${c.outs ? `<div class="cz-row neg"><span>− Retiros</span><b>− ${money(c.outs)}</b></div>` : ""}${c.expenses ? `<div class="cz-row neg"><span>− Gastos con la caja</span><b>− ${money(c.expenses)}</b></div>` : ""}${c.refunds ? `<div class="cz-row neg"><span>− Devoluciones en efectivo</span><b>− ${money(c.refunds)}</b></div>` : ""}
       <div class="cz-row tot"><span>= Esperado</span><b>${money(x.expected != null ? x.expected : c.expected)}</b></div>
       ${x.counted != null ? `<div class="cz-row"><span>Contado</span><b>${money(x.counted)}</b></div><div class="cz-row tot ${Math.abs(d) < 0.5 ? "" : d < 0 ? "neg" : "warn"}"><span>Diferencia</span><b>${Math.abs(d) < 0.5 ? "Cuadra" : (d < 0 ? "Faltan " : "Sobran ") + money(Math.abs(d))}</b></div>` : ""}
     </div>
@@ -1857,6 +1927,7 @@ document.addEventListener("click", (e) => {
   else if (a === "print") printTicket(t.dataset.sale);
   else if (a === "wa") waSend(t.dataset.sale);
   else if (a === "void") voidModal(t.dataset.sale);
+  else if (a === "return") returnModal(t.dataset.sale);
   else if (a === "caja") cashModal();
   else if (a === "cash-move") cashMoveModal(t.dataset.type);
   else if (a === "cash-count") cashCountModal();
