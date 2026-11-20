@@ -426,7 +426,7 @@ function bindLogin() {
       state.className = "lg-state busy";
       let r; try { r = await sbq(sb.rpc("login_lookup", { p_email: toEmail(u) })); } catch (e) { console.warn("login_lookup no disponible (¿falta correr 0006_login.sql?)", e); if (my === seq) { go.disabled = false; checked = ""; show("", ""); } return; }
       if (my !== seq) return;
-      if (!r || !r.found) { go.disabled = true; return show("bad", `No existe el usuario <b>${esc(u)}</b>. Revisá cómo lo escribiste.`, "bad"); }
+      if (!r || !r.found) { go.disabled = true; return show("bad", `<span><b>No existe el usuario “${esc(u)}”</b><small>Revisá cómo lo escribiste.</small></span>`, "bad"); }
       if (!r.active) { go.disabled = false; return show("warn", `<span class="avatar grey">${esc(initials(r.name))}</span><span><b>${esc(r.name)}</b><small>Cuenta pendiente de activación</small></span>`, "warn"); }
       found = r; go.disabled = false;
       show("ok", `<span class="avatar ${/propiet/i.test(r.role) ? "red" : ""}">${esc(initials(r.name))}</span><span><small>Hola,</small><b>${esc(r.name)}</b><small>${esc(r.role)}</small></span>`, "ok");
