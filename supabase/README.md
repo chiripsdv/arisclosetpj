@@ -1,6 +1,6 @@
 # Base de datos de Ari's Closet (Supabase)
 
-Siete scripts SQL crean toda la base: tablas, seguridad por rol, funciones de venta y datos iniciales.
+Ocho scripts SQL crean toda la base: tablas, seguridad por rol, funciones de venta y datos iniciales.
 Se corren **una sola vez**, en orden, en un proyecto nuevo de Supabase.
 
 | Script | Qué hace |
@@ -12,6 +12,7 @@ Se corren **una sola vez**, en orden, en un proyecto nuevo de Supabase.
 | `migrations/0005_usuarios.sql` | Permite que la propietaria asigne contraseñas desde la app |
 | `migrations/0006_login.sql` | Al escribir el usuario en el login, muestra su nombre y avisa si no existe |
 | `migrations/0007_gastos_prorrateo.sql` | Gastos prorrateados: alquiler, salarios o equipo se reparten por día en los reportes |
+| `migrations/0008_caja.sql` | Caja: apertura con fondo, retiros/ingresos, gastos pagados con la caja, arqueo a ciegas y cierre |
 
 ## Pasos de instalación
 
@@ -21,7 +22,7 @@ Se corren **una sola vez**, en orden, en un proyecto nuevo de Supabase.
    - **Region:** East US (la más cercana a Nicaragua).
 2. Esperá a que el proyecto termine de crearse (1–2 minutos).
 3. Menú izquierdo → **SQL Editor** → **New query**. Copiá todo el contenido de `0001_tablas.sql`, pegalo y tocá **Run**. Debe decir *Success*.
-4. Repetí el paso 3 con `0002_seguridad.sql`, `0003_funciones.sql`, `0004_datos_iniciales.sql` `0005_usuarios.sql` `0006_login.sql` y por último `0007_gastos_prorrateo.sql`.
+4. Repetí el paso 3 con `0002_seguridad.sql`, `0003_funciones.sql`, `0004_datos_iniciales.sql` `0005_usuarios.sql` `0006_login.sql` `0007_gastos_prorrateo.sql` y por último `0008_caja.sql`.
 5. **Authentication → Sign In / Providers → Email:** dejá **activado** *Allow new users to sign up* y **desactivá** *Confirm email*. Así la propietaria crea usuarios desde la app sin correos de confirmación.
 6. **Authentication → Users → Add user → Create new user:** creá a la **propietaria**. Como correo poné su usuario seguido de `@ariscloset.app` (ej. `mvaldivia@ariscloset.app`), una contraseña de al menos 6 caracteres y marcá *Auto Confirm User*. El primer usuario queda como propietaria automáticamente.
 7. Entrá a la app con el usuario (`mvaldivia`) y la contraseña. En **Usuarios → Editar** poné su nombre completo, y con **Nuevo usuario** creá al resto (usuario, nombre, rol y contraseña).

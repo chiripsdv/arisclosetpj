@@ -22,6 +22,7 @@ function load() {
 }
 // Asegura campos nuevos en datos guardados (socios, códigos de barra, ajustes)
 function migrate() {
+  DB.cash = DB.cash || { sessions: [], moves: [] };
   DB.partners = DB.partners || JSON.parse(JSON.stringify(window.SEED.partners));
   DB.settings = Object.assign({ waCountry: "505", relay: DEFAULT_RELAY, paper: "80", rcLogo: true, rcAddress: "", rcPhone: "", rcRuc: "", rcFooter: "¡Gracias por tu compra!\nCambios dentro de 8 días con este recibo." }, DB.settings);
   DB.products.forEach(p => { if (!p.partner) p.partner = DB.partners[0].id; });
@@ -146,7 +147,8 @@ async function cloudLoad() {
     sbAll(() => sb.from("products").select("*, product_costs(cost), variants(*)").eq("active", true).order("created_at").order("id")),
     sbAll(() => sb.from("sales").select("*, sale_items(*, sale_item_costs(unit_cost))").gte("day", sinceDay).order("created_at").order("id")),
     sbAll(() => sb.from("stock_moves").select("*, sales(number)").gte("created_at", since.toISOString()).order("id")),
-    loadExpenses(sinceDay)
+    loadExpenses(sinceDay),
+    cashRefresh()
   ]);
   const D = emptyDB();
   roles.sort((a, b) => ROLE_ORDER.indexOf(a.key) - ROLE_ORDER.indexOf(b.key)).forEach(r => {
@@ -199,8 +201,10 @@ function cloudSubscribe() {
   if (CL.rt) return;
   const on = (ch, table) => ch.on("postgres_changes", { event: "*", schema: "public", table }, (p) => { if (table === "sales" && p.eventType === "INSERT" && p.new && p.new.id) CL.newSales.push(p.new.id); cloudSoon(); });
   CL.rt = ["sales", "variants", "expenses"].reduce(on, sb.channel("tienda")).subscribe();
+  // La caja va en otro canal: si falta el script 0008, no afecta al resto
+  if (!CL.noCash) CL.rtCash = ["cash_sessions", "cash_moves"].reduce((ch, table) => ch.on("postgres_changes", { event: "*", schema: "public", table }, () => cloudSoon()), sb.channel("caja")).subscribe();
 }
-function cloudUnsubscribe() { if (CL.rt) { sb.removeChannel(CL.rt); CL.rt = null; } }
+function cloudUnsubscribe() { if (CL.rt) { sb.removeChannel(CL.rt); CL.rt = null; } if (CL.rtCash) { sb.removeChannel(CL.rtCash); CL.rtCash = null; } }
 document.addEventListener("visibilitychange", () => { if (CLOUD && me && document.visibilityState === "visible") cloudSoon(100); });
 
 function bootScreen(msg) { $("#toast-root").innerHTML = ""; app.innerHTML = `<div class="boot"><img src="icons/logo-t.png" alt="Ari's Closet"><span class="spinner"></span><small>${esc(msg || "Abriendo caja…")}</small></div>`; }
@@ -341,7 +345,12 @@ function render() {
       <nav class="nav">${NAV.filter(([k]) => role().views.includes(k)).map(([k, l]) => `<a href="#${k}" class="${v === k ? "active" : ""}" data-tip="${l}">${I[k]}<span class="nl">${l}</span>${tabBadge(k, low)}</a>`).join("")}</nav>
       <div class="side-foot">
         ${installHTML()}
-        <div class="cashbox" data-tip="${money(todayTotal)}"><span class="cb-ico">${I.cash}</span><div class="cb-body"><small>${can("seeAllSales") ? "Caja de hoy" : "Mis ventas de hoy"}</small><b>${money(todayTotal)}</b><small>${todaySales.length} facturas · ${todaySales.reduce((a, x) => a + x.items.reduce((b, i) => b + i.qty, 0), 0)} uds.</small></div></div>
+        <div class="cashbox ${cashOn() ? "click" : ""}" ${cashOn() ? `data-act="caja" role="button" tabindex="0"` : ""} data-tip="${cashNow() && cashNow().can_see ? money(cashNow().expected) : money(todayTotal)}"><span class="cb-ico">${I.cash}</span><div class="cb-body">${(() => {
+          const c = cashNow();
+          if (c && c.can_see) return `<small>Efectivo en caja</small><b>${money(c.expected)}</b><small>Abierta ${fmtT(c.opened_at)} · ventas ${money(todayTotal)}</small>`;
+          if (c && !c.open) return `<small>Caja cerrada</small><b>Abrir caja</b><small>${can("seeAllSales") ? "Ventas hoy " + money(todayTotal) : "Mis ventas hoy " + money(todayTotal)}</small>`;
+          return `<small>${can("seeAllSales") ? "Ventas de hoy" : "Mis ventas de hoy"}</small><b>${money(todayTotal)}</b><small>${todaySales.length} facturas · ${todaySales.reduce((a, x) => a + x.items.reduce((b, i) => b + i.qty, 0), 0)} uds.</small>`;
+        })()}</div></div>
         <div class="me"><span class="avatar ${me.role === "propietaria" ? "red" : ""}" title="${esc(me.name)}">${esc(initials(me.name))}</span><div><b>${esc(me.name)}</b><span>${esc(role().label)}</span></div><button title="Salir" data-act="logout">${I.out}</button></div>
       </div>
     </aside>
@@ -536,7 +545,7 @@ function panelView() {
   const pmax = Math.max(1, ...byPartner.map(x => x.t));
   return topbar(`${greet()}, ${esc(me.name.split(" ")[0])}`, S.partner === "all" ? fmtDL(new Date()) : `${esc(partnerById(S.partner).name)} · ${fmtDL(new Date())}`, `
     ${!mine && !CLOUD ? `<label class="toggle hide-m" title="Genera una venta de otro dispositivo cada pocos segundos"><input type="checkbox" id="simToggle" ${S.sim ? "checked" : ""}> <span class="tl-long">Simular ventas de otros dispositivos</span><span class="tl-short">Simular</span></label>` : ""}
-    ${spkRangeSeg("hide-m")}<a href="#venta" class="btn red">${I.plus}<span class="hide-m">Nueva venta</span></a>`) + `
+    ${spkRangeSeg("hide-m")}${cashChip()}<a href="#venta" class="btn red">${I.plus}<span class="hide-m">Nueva venta</span></a>`) + `
   <div class="content">
     ${partnerSeg() ? `<div class="panel-tools">${partnerSeg()}${spkRangeSeg("hide-d")}</div>` : `<div class="panel-tools hide-d">${spkRangeSeg()}</div>`}
     <section class="kpis">
@@ -665,7 +674,7 @@ function myPanelView() {
   const topL = Object.entries(top).sort((a, b) => b[1].q - a[1].q);
   const list = s.slice().sort((a, b) => b.at.localeCompare(a.at));
   const perDay = ws.map(x => x.reduce((a, y) => a + y.items.reduce((b, i) => b + i.qty, 0), 0)), pmax = Math.max(1, ...perDay);
-  return topbar(`${greet()}, ${esc(me.name.split(" ")[0])}`, `Mis ventas · ${fmtDL(new Date())}`, `${spkRangeSeg("hide-m")}<a href="#venta" class="btn red">${I.plus}<span class="hide-m">Nueva venta</span></a>`) + `
+  return topbar(`${greet()}, ${esc(me.name.split(" ")[0])}`, `Mis ventas · ${fmtDL(new Date())}`, `${spkRangeSeg("hide-m")}${cashChip()}<a href="#venta" class="btn red">${I.plus}<span class="hide-m">Nueva venta</span></a>`) + `
   <div class="content">
     <div class="panel-tools hide-d">${spkRangeSeg()}</div>
     <section class="kpis">
@@ -708,7 +717,7 @@ function ventaView() {
   const { subtotal, amount, total } = cartCalc();
   const lim = role().maxDisc;
   const n = (DB.sales.reduce((a, s) => Math.max(a, s.n), 400) + 1);
-  return topbar("Nueva venta", `${CLOUD ? "" : "Factura #" + n + " · "}${esc(me.name)}`, `<button class="btn" data-act="camscan" title="Escanear con la cámara de este equipo">${I.cam}<span class="hide-m">Cámara</span></button><button class="btn hide-m ${phoneOnline() ? "scan-on" : ""}" data-act="pair" id="scanBadge" title="Usar un celular como escáner de esta computadora">${I.phone}<span>${phoneOnline() ? "Celular conectado" : "Escanear con celular"}</span></button>`) + `
+  return topbar("Nueva venta", `${CLOUD ? "" : "Factura #" + n + " · "}${esc(me.name)}`, `${cashChip()}<button class="btn" data-act="camscan" title="Escanear con la cámara de este equipo">${I.cam}<span class="hide-m">Cámara</span></button><button class="btn hide-m ${phoneOnline() ? "scan-on" : ""}" data-act="pair" id="scanBadge" title="Usar un celular como escáner de esta computadora">${I.phone}<span>${phoneOnline() ? "Celular conectado" : "Escanear con celular"}</span></button>`) + `
   <div class="content pos">
     <section class="stack" style="gap:12px">
       <div class="search full">${I.search}<input id="posQ" placeholder="Buscar producto, talla, color o código de barras" value="${esc(S.q)}" autocomplete="off" enterkeyhint="search"></div>
@@ -792,6 +801,7 @@ function checkMargin() {
 }
 function cobrar() {
   if (!S.cart.length || !checkMargin()) return;
+  { const c = cashNow(); if (c && !c.open) return cashOpenModal(() => cobrar()); }
   if (CLOUD) return cobrarCloud();
   const { subtotal, amount, total } = cartCalc();
   const now = new Date();
@@ -1070,6 +1080,151 @@ function newProdModal() {
   codeFieldKeys();
 }
 
+/* ---------- Caja: apertura, retiros/ingresos, arqueo y cierre ----------
+   Efectivo esperado = fondo + ventas en efectivo + ingresos − retiros − gastos pagados con la caja.
+   Quien no ve todas las ventas cuenta "a ciegas": no ve el esperado ni la diferencia. */
+const DENOMS = [[1000, "b"], [500, "b"], [200, "b"], [100, "b"], [50, "b"], [20, "b"], [10, "m"], [5, "m"], [1, "m"], [0.5, "m"], [0.25, "m"], [0.1, "m"]];
+const isCashPay = (m) => /^efectivo/i.test(m || "");
+const cashOn = () => !CLOUD || !CL.noCash;
+const cashSee = () => can("seeAllSales");
+// --- versión demo (se guarda en el navegador) ---
+function cashLocalCalc(sx) {
+  const until = sx.closedAt || new Date().toISOString();
+  const inRange = DB.sales.filter(x => x.status === "cerrada" && x.at >= sx.openedAt && x.at <= until);
+  const cashS = inRange.filter(x => isCashPay(x.pay)), mv = (DB.cash.moves || []).filter(m => m.session === sx.id);
+  const other = {}; inRange.filter(x => !isCashPay(x.pay)).forEach(x => { other[x.pay] = other[x.pay] || { method: x.pay, total: 0, n: 0 }; other[x.pay].total += x.total; other[x.pay].n++; });
+  const r = { opening: sx.opening, cash_sales: cashS.reduce((a, x) => a + x.total, 0), cash_sales_n: cashS.length, ins: mv.filter(m => m.type === "ingreso").reduce((a, m) => a + m.amount, 0),
+    outs: mv.filter(m => m.type === "retiro").reduce((a, m) => a + m.amount, 0), expenses: DB.expenses.filter(e => e.cashSession === sx.id).reduce((a, e) => a + e.amount, 0), other: Object.values(other).sort((a, b) => b.total - a.total) };
+  r.expected = r.opening + r.cash_sales + r.ins - r.outs - r.expenses;
+  return r;
+}
+function cashLocalStatus() {
+  DB.cash = DB.cash || { sessions: [], moves: [] };
+  const sx = DB.cash.sessions.find(x => x.status === "abierta"), last = DB.cash.sessions.filter(x => x.status === "cerrada").sort((a, b) => b.closedAt.localeCompare(a.closedAt))[0];
+  if (!sx) return { open: false, last_counted: last && cashSee() ? last.counted : null, last_closed_at: last ? last.closedAt : null, last_closed_by: last ? userById(last.closedBy).name : null };
+  const base = { open: true, id: sx.id, day: sx.day, opened_at: sx.openedAt, opened_by: userById(sx.openedBy).name, can_see: cashSee() };
+  return cashSee() ? { ...base, ...cashLocalCalc(sx), moves: DB.cash.moves.filter(m => m.session === sx.id).map(m => ({ ...m, at: m.at, by: userById(m.by).name })) } : base;
+}
+const cashNow = () => !cashOn() ? null : CLOUD ? CL.cash : cashLocalStatus();
+async function cashRefresh() { if (CLOUD && !CL.noCash) { try { CL.cash = await sbq(sb.rpc("cash_status")); } catch (e) { if (/cash_status|function|PGRST202|42883/i.test(String(e.message || e.code))) CL.noCash = true; } } }
+// Botón de estado de la caja (barra superior)
+function cashChip() {
+  const c = cashNow(); if (!c) return "";
+  return `<button class="cash-chip ${c.open ? "on" : "off"}" data-act="caja" title="Caja">${LI("wallet-cards")}<span>${c.open ? (c.can_see ? money(c.expected) : "Caja abierta") : "Abrir caja"}</span></button>`;
+}
+function cashModal() {
+  const c = cashNow(); if (!c) return;
+  if (!c.open) return cashOpenModal();
+  const t = fmtT(c.opened_at), since = c.day === today() ? `hoy a las ${t}` : `el ${fmtD(c.opened_at)} a las ${t}`;
+  const line = (lbl, v, cls = "") => `<div class="cz-row ${cls}"><span>${lbl}</span><b>${v}</b></div>`;
+  modal(`<div class="modal-h"><div class="mh-t"><span class="ct-ico sm t-sage">${LI("wallet-cards")}</span><div><h3>Caja abierta</h3><div class="hint">Abrió ${esc(c.opened_by)} ${since}</div></div></div><button class="btn icon ghost" data-close>${I.x}</button></div>
+    ${c.day !== today() ? `<div class="err" style="text-align:left">Esta caja quedó abierta desde otro día. Hacé el arqueo y cerrala antes de seguir.</div>` : ""}
+    ${c.can_see ? `<div class="cz">
+      ${line("Fondo inicial", money(c.opening))}
+      ${line(`+ Ventas en efectivo <small>${c.cash_sales_n} ${c.cash_sales_n === 1 ? "factura" : "facturas"}</small>`, money(c.cash_sales))}
+      ${c.ins ? line("+ Ingresos a la caja", money(c.ins)) : ""}
+      ${c.outs ? line("− Retiros", "− " + money(c.outs), "neg") : ""}
+      ${c.expenses ? line("− Gastos pagados con la caja", "− " + money(c.expenses), "neg") : ""}
+      ${line("= Efectivo que debería haber", money(c.expected), "tot")}
+    </div>
+    ${(c.other || []).length ? `<div class="cz-other"><span class="hint">No están en la gaveta:</span>${c.other.map(o => `<span class="chip">${esc(o.method)} · ${money(o.total)}</span>`).join("")}</div>` : ""}
+    ${(c.moves || []).length ? `<div class="cz-moves">${c.moves.map(m => `<div class="cz-mv"><span>${m.type === "retiro" ? "Retiro" : "Ingreso"} · ${esc(m.note || "sin nota")}<small>${fmtT(m.at)} · ${esc(m.by)}</small></span><b class="${m.type === "retiro" ? "neg" : ""}">${m.type === "retiro" ? "− " : "+ "}${money(m.amount)}</b></div>`).join("")}</div>` : ""}
+    <div class="cz-btns"><button class="btn" data-act="cash-move" data-type="retiro">${LI("log-out")} Retiro</button><button class="btn" data-act="cash-move" data-type="ingreso">${LI("plus")} Ingreso</button></div>`
+    : `<p class="hint" style="margin:0">Al final del día contá el efectivo de la gaveta y registralo en el arqueo. La propietaria revisa el resultado.</p>`}
+    <button class="btn is-go" data-act="cash-count">${LI("hand-coins")} Hacer arqueo y cerrar caja</button>`);
+}
+function cashOpenModal(after) {
+  const c = cashNow() || {};
+  modal(`<div class="modal-h"><div class="mh-t"><span class="ct-ico sm t-sage">${LI("wallet-cards")}</span><div><h3>Abrir caja</h3><div class="hint">${c.last_closed_at ? `Último cierre: ${fmtD(c.last_closed_at)} ${fmtT(c.last_closed_at)}${c.last_closed_by ? " · " + esc(c.last_closed_by) : ""}` : "Primera apertura"}</div></div></div><button class="btn icon ghost" data-close>${I.x}</button></div>
+    ${after ? `<p class="hint" style="margin:0">Para empezar a vender, abrí la caja con el efectivo que hay en la gaveta.</p>` : ""}
+    <form id="f" class="form"><div class="field full"><label>Fondo inicial (efectivo para dar cambio)</label><input name="opening" type="number" min="0" step="0.01" required inputmode="decimal" value="${c.last_counted != null ? +c.last_counted : ""}" placeholder="Ej. 1000"></div>
+    ${c.last_counted != null ? `<div class="hint full">Sugerido: lo que se contó en el último cierre.</div>` : ""}
+    <button class="btn dark lg full">Abrir caja</button></form>`, f => {
+    const v = Math.max(0, +f.get("opening") || 0);
+    const done = () => { toast(`Caja abierta con ${money(v)}`); if (after) setTimeout(after, 0); };
+    if (CLOUD) return act(async () => { await sbq(sb.rpc("cash_open", { p_opening: v })); await cashRefresh(); }).then(ok => { if (ok) done(); return ok; });
+    DB.cash.sessions.push({ id: uid(), day: today(), openedAt: new Date().toISOString(), openedBy: me.id, opening: v, status: "abierta" }); save(); render(); done();
+  });
+}
+function cashMoveModal(type) {
+  modal(`<div class="modal-h"><h3>${type === "retiro" ? "Retiro de la caja" : "Ingreso a la caja"}</h3><button class="btn icon ghost" data-close>${I.x}</button></div>
+    <form id="f" class="form"><div class="field"><label>Monto</label><input name="amount" type="number" min="0.01" step="0.01" required inputmode="decimal"></div>
+    <div class="field"><label>Motivo</label><input name="note" required placeholder="${type === "retiro" ? "Ej. Depósito al banco" : "Ej. Sencillo para cambio"}"></div>
+    <button class="btn dark lg full">Registrar ${type}</button><button type="button" class="btn ghost full" data-act="caja">Volver</button></form>`, f => {
+    const amount = +f.get("amount"), note = f.get("note").trim();
+    if (CLOUD) return act(async () => { await sbq(sb.rpc("cash_move", { p_type: type, p_amount: amount, p_note: note })); await cashRefresh(); }, type === "retiro" ? "Retiro registrado" : "Ingreso registrado").then(ok => { if (ok) setTimeout(cashModal, 0); return ok; });
+    const sx = DB.cash.sessions.find(x => x.status === "abierta");
+    DB.cash.moves.push({ id: uid(), session: sx.id, type, amount, note, by: me.id, at: new Date().toISOString() }); save(); render(); toast(type === "retiro" ? "Retiro registrado" : "Ingreso registrado"); cashModal(); return false;
+  });
+}
+function cashCountModal() {
+  const c = cashNow(); if (!c || !c.open) return;
+  const see = c.can_see;
+  modal(`<div class="modal-h"><div><h3>Arqueo de caja</h3><div class="hint">Contá el efectivo de la gaveta${see ? "" : ". La app no muestra cuánto debería haber, para que el conteo sea honesto"}</div></div><button class="btn icon ghost" data-close>${I.x}</button></div>
+    <form id="f" class="form">
+      <div class="full dn-grid">${DENOMS.map(([d, k]) => `<label class="dn ${k}"><span class="dn-v">${d >= 1 ? d : d.toFixed(2).replace(/^0/, "")}<small>${d === 10 ? "bill./moneda" : k === "b" ? "billete" : "moneda"}</small></span><input type="number" min="0" step="1" inputmode="numeric" data-dn="${d}" placeholder="0"><span class="dn-t" data-dt="${d}"></span></label>`).join("")}</div>
+      <div class="field full"><label>Otro monto (si no se cuenta por billetes)</label><input type="number" min="0" step="0.01" inputmode="decimal" id="dnExtra" placeholder="0"></div>
+      <div class="full cz-count"><span>Total contado</span><b id="dnTotal">${money(0)}</b></div>
+      ${see ? `<div class="full cz-diff" id="dnDiff"></div>` : ""}
+      <div class="field full"><label>Nota (opcional)</label><input name="note" placeholder="Ej. Faltan C$ 20 de un vuelto"></div>
+      <button class="btn dark lg full" type="submit">Cerrar caja</button>
+      <button type="button" class="btn ghost full" data-act="caja">Volver</button>
+    </form>`, f => {
+    const { total, bd } = dnSum();
+    if (!total && !confirm("El conteo da C$ 0. ¿Cerrar la caja igual?")) return false;
+    const show = (r) => cashResultModal(total, r);
+    if (CLOUD) { let r; return act(async () => { r = await sbq(sb.rpc("cash_close", { p_counted: total, p_breakdown: bd, p_note: f.get("note") })); await cashRefresh(); }).then(ok => { if (ok) setTimeout(() => show(r), 0); return ok; }); }
+    const sx = DB.cash.sessions.find(x => x.status === "abierta"); const calc = cashLocalCalc(sx);
+    Object.assign(sx, { status: "cerrada", closedAt: new Date().toISOString(), closedBy: me.id, expected: calc.expected, counted: total, difference: Math.round((total - calc.expected) * 100) / 100, breakdown: bd, note: f.get("note").trim() || null });
+    save(); render(); setTimeout(() => show(see ? { ...calc, counted: total, difference: sx.difference } : { ok: true }), 0);
+  });
+  const dnSum = () => { let total = 0; const bd = {}; document.querySelectorAll("[data-dn]").forEach(i => { const q = Math.max(0, Math.floor(+i.value || 0)); if (q) { bd[i.dataset.dn] = q; total += q * +i.dataset.dn; } }); const ex = Math.max(0, +$("#dnExtra").value || 0); if (ex) { bd.otro = ex; total += ex; } return { total: Math.round(total * 100) / 100, bd }; };
+  const upd = () => {
+    document.querySelectorAll("[data-dn]").forEach(i => { const q = Math.max(0, Math.floor(+i.value || 0)); $(`[data-dt="${i.dataset.dn}"]`).textContent = q ? money(q * +i.dataset.dn) : ""; i.closest(".dn").classList.toggle("has", q > 0); });
+    const { total } = dnSum(); $("#dnTotal").textContent = money(total);
+    if (see) { const d = Math.round((total - c.expected) * 100) / 100, el = $("#dnDiff"); el.className = "full cz-diff " + (Math.abs(d) < 0.5 ? "ok" : d < 0 ? "bad" : "warn"); el.innerHTML = `Debería haber <b>${money(c.expected)}</b> · ${Math.abs(d) < 0.5 ? "<b>cuadra</b>" : d < 0 ? `faltan <b>${money(-d)}</b>` : `sobran <b>${money(d)}</b>`}`; }
+  };
+  document.querySelectorAll("[data-dn], #dnExtra").forEach(i => i.oninput = upd); upd();
+  // Enter pasa a la siguiente denominación
+  $("#f").addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target.matches("[data-dn]")) { e.preventDefault(); const all = [...document.querySelectorAll("[data-dn], #dnExtra")]; (all[all.indexOf(e.target) + 1] || e.target).focus(); } });
+}
+function cashResultModal(total, r) {
+  const see = r && r.difference !== undefined, d = see ? +r.difference : 0, ok = Math.abs(d) < 0.5;
+  modal(`<div class="cz-result ${see ? (ok ? "ok" : d < 0 ? "bad" : "warn") : "ok"}">
+      <span class="czr-ico">${see && !ok ? LI("circle-alert") : LI("circle-check")}</span>
+      <h3>Caja cerrada</h3>
+      <p>Contado: <b>${money(total)}</b></p>
+      ${see ? `<p>${ok ? "La caja <b>cuadra</b> con lo esperado." : d < 0 ? `<b>Faltan ${money(-d)}</b> respecto a los ${money(r.expected)} esperados.` : `<b>Sobran ${money(d)}</b> respecto a los ${money(r.expected)} esperados.`}</p>` : `<p>Gracias. La propietaria revisa el arqueo.</p>`}
+      <button class="btn dark lg block" data-close>Listo</button></div>`);
+}
+// Historial de cierres para Reportes
+async function cashHistoryLoad(days) {
+  const key = days[0] + days[days.length - 1];
+  if (S.cashHist && S.cashHist.key === key && Date.now() - S.cashHist.t < 15000) return;
+  let list;
+  if (CLOUD) { try { list = await sbq(sb.rpc("cash_history", { p_from: days[0], p_to: days[days.length - 1] })); } catch (e) { list = []; } }
+  else list = ((DB.cash || {}).sessions || []).filter(x => x.day >= days[0] && x.day <= days[days.length - 1]).sort((a, b) => b.openedAt.localeCompare(a.openedAt)).map(x => ({ id: x.id, day: x.day, status: x.status, opened_at: x.openedAt, closed_at: x.closedAt, opened_by: userById(x.openedBy).name, closed_by: x.closedBy ? userById(x.closedBy).name : null, opening: x.opening, expected: x.expected, counted: x.counted, difference: x.difference, breakdown: x.breakdown, note: x.note, calc: cashLocalCalc(x), moves: DB.cash.moves.filter(m => m.session === x.id).map(m => ({ ...m, by: userById(m.by).name })) }));
+  S.cashHist = { key, t: Date.now(), list: list || [] };
+  if (CLOUD && view() === "reportes" && S.repTab === "caja") render();
+}
+function cashSessionModal(id) {
+  const x = ((S.cashHist || {}).list || []).find(s => s.id === id); if (!x) return;
+  const c = x.calc || {}, d = x.difference == null ? null : +x.difference;
+  const bd = x.breakdown ? Object.entries(x.breakdown).sort((a, b) => (b[0] === "otro" ? -1 : +b[0]) - (a[0] === "otro" ? -1 : +a[0])) : [];
+  modal(`<div class="modal-h"><div><h3>Caja del ${fmtD(x.day + "T12:00:00")}</h3><div class="hint">Abrió ${esc(x.opened_by || "—")} ${fmtT(x.opened_at)}${x.closed_at ? ` · cerró ${esc(x.closed_by || "—")} ${fmtT(x.closed_at)}` : " · sigue abierta"}</div></div><button class="btn icon ghost" data-close>${I.x}</button></div>
+    <div class="cz">
+      <div class="cz-row"><span>Fondo inicial</span><b>${money(x.opening)}</b></div>
+      <div class="cz-row"><span>+ Ventas en efectivo <small>${c.cash_sales_n || 0} ${(c.cash_sales_n || 0) === 1 ? "factura" : "facturas"}</small></span><b>${money(c.cash_sales || 0)}</b></div>
+      ${c.ins ? `<div class="cz-row"><span>+ Ingresos</span><b>${money(c.ins)}</b></div>` : ""}${c.outs ? `<div class="cz-row neg"><span>− Retiros</span><b>− ${money(c.outs)}</b></div>` : ""}${c.expenses ? `<div class="cz-row neg"><span>− Gastos con la caja</span><b>− ${money(c.expenses)}</b></div>` : ""}
+      <div class="cz-row tot"><span>= Esperado</span><b>${money(x.expected != null ? x.expected : c.expected)}</b></div>
+      ${x.counted != null ? `<div class="cz-row"><span>Contado</span><b>${money(x.counted)}</b></div><div class="cz-row tot ${Math.abs(d) < 0.5 ? "" : d < 0 ? "neg" : "warn"}"><span>Diferencia</span><b>${Math.abs(d) < 0.5 ? "Cuadra" : (d < 0 ? "Faltan " : "Sobran ") + money(Math.abs(d))}</b></div>` : ""}
+    </div>
+    ${(c.other || []).length ? `<div class="cz-other"><span class="hint">Otros medios:</span>${c.other.map(o => `<span class="chip">${esc(o.method)} · ${money(o.total)}</span>`).join("")}</div>` : ""}
+    ${bd.length ? `<div class="pl-grp">Conteo</div><div class="cz-bd">${bd.map(([k, q]) => k === "otro" ? `<span>Otro monto <b>${money(q)}</b></span>` : `<span>${q} × ${+k >= 1 ? k : (+k).toFixed(2)} <b>${money(q * +k)}</b></span>`).join("")}</div>` : ""}
+    ${(x.moves || []).length ? `<div class="pl-grp">Retiros e ingresos</div><div class="cz-moves">${x.moves.map(m => `<div class="cz-mv"><span>${m.type === "retiro" ? "Retiro" : "Ingreso"} · ${esc(m.note || "")}<small>${fmtT(m.at)} · ${esc(m.by)}</small></span><b class="${m.type === "retiro" ? "neg" : ""}">${m.type === "retiro" ? "− " : "+ "}${money(m.amount)}</b></div>`).join("")}</div>` : ""}
+    ${x.note ? `<div class="hint">Nota del cierre: “${esc(x.note)}”</div>` : ""}`);
+}
+
 /* ---------- Gastos ---------- */
 function gastosView() {
   const list = scopedExp(DB.expenses).slice().sort((a, b) => b.at.localeCompare(a.at));
@@ -1093,6 +1248,7 @@ function newExpModal() {
   <div class="field full"><label>¿De quién es el gasto?</label><select name="partner">${partnerOpts("shared", true)}</select></div>
   <div class="field full"><label>Detalle</label><input name="note" placeholder="Ej. Pago de luz noviembre" required></div>
   <div class="field full exp-warn" id="expWarn" hidden>${LI("circle-alert")}<span>Las compras de prendas para vender no van aquí: registralas en <b>Inventario → Entrada</b> con su costo. Si las ponés como gasto, el estado de resultados las cuenta dos veces.</span></div>
+  ${cashNow() && cashNow().open ? `<label class="field full cash-chk"><span class="switch"><input type="checkbox" name="fromCash"><span></span></span><span><b>Pagado con efectivo de la caja</b><small>Se descuenta del efectivo esperado en el arqueo</small></span></label>` : ""}
   ${CLOUD && CL.noSpread ? "" : `<div class="field full spread-box">
     <label class="spread-tg"><span><b>Distribuir este gasto</b><small>Para alquiler, salarios, equipo… cada día carga solo su parte</small></span><span class="switch"><input type="checkbox" name="spread" id="spreadOn"><span></span></span></label>
     <div class="spread-opts" id="spreadOpts" hidden>
@@ -1106,9 +1262,9 @@ function newExpModal() {
     if (CLOUD) return act(async () => {
       const file = f.get("photo"); let receipt_path = null;
       if (file && file.size) receipt_path = await uploadImg("receipts", `${me.id}/${Date.now()}.jpg`, await ART.compress(file, 1400));
-      await sbq(sb.from("expenses").insert({ category_id: CL.ecatId[f.get("cat")], amount: +f.get("amount"), note: f.get("note").trim(), partner_id: f.get("partner") === "shared" ? null : f.get("partner"), receipt_path, ...(sp ? { spread_qty: sp.spreadQty, spread_unit: sp.spreadUnit, spread_from: sp.spreadFrom } : {}) }));
+      await sbq(sb.from("expenses").insert({ category_id: CL.ecatId[f.get("cat")], amount: +f.get("amount"), note: f.get("note").trim(), partner_id: f.get("partner") === "shared" ? null : f.get("partner"), receipt_path, ...(f.get("fromCash") ? { paid_from_cash: true } : {}), ...(sp ? { spread_qty: sp.spreadQty, spread_unit: sp.spreadUnit, spread_from: sp.spreadFrom } : {}) }));
     }, "Gasto registrado");
-    DB.expenses.push({ id: uid(), at: new Date().toISOString(), day: today(), cat: f.get("cat"), amount: +f.get("amount"), note: f.get("note"), partner: f.get("partner"), by: me.id, ...(sp || {}) }); save(); render(); toast("Gasto registrado");
+    DB.expenses.push({ id: uid(), at: new Date().toISOString(), day: today(), cat: f.get("cat"), amount: +f.get("amount"), note: f.get("note"), partner: f.get("partner"), by: me.id, ...(sp || {}), ...(f.get("fromCash") ? { cashSession: (DB.cash.sessions.find(x => x.status === "abierta") || {}).id } : {}) }); save(); render(); toast("Gasto registrado");
   });
   const warn = () => { $("#expWarn").hidden = !/mercader/i.test($("#f [name=cat]").value); };
   $("#f [name=cat]").onchange = warn; warn();
@@ -1187,7 +1343,7 @@ function erDetailModal(k) {
 function repView() {
   const D = repData(); const { days, s, e, total, gross, cost, exp, disc } = D;
   let tab = S.repTab || "resumen"; const P = can("canSeeProfit");
-  const tabs = can("seeAllSales") ? [["resumen", "Resumen"], ...(DB.partners.length > 1 ? [["socios", "Socios"]] : []), ["producto", "Por producto"], ["categoria", "Categorías"], ["vendedora", "Vendedoras"], ["tickets", "Facturas"], ["inventario", "Inventario"], ["movimientos", "Movimientos"]]
+  const tabs = can("seeAllSales") ? [["resumen", "Resumen"], ...(DB.partners.length > 1 ? [["socios", "Socios"]] : []), ["producto", "Por producto"], ["categoria", "Categorías"], ["vendedora", "Vendedoras"], ["tickets", "Facturas"], ...(cashOn() ? [["caja", "Caja"]] : []), ["inventario", "Inventario"], ["movimientos", "Movimientos"]]
     : [["resumen", "Resumen"], ["producto", "Por producto"], ["tickets", "Facturas"]];
   const mcell = (g) => P ? `<td class="r">${money(g.margin)}</td><td class="r"><span class="chip ${g.pct >= 40 ? "green" : g.pct >= 20 ? "" : "red"}">${g.pct.toFixed(0)} %</span></td>` : "";
   const mhead = P ? `<th class="r">Margen</th><th class="r">%</th>` : "";
@@ -1253,6 +1409,19 @@ function repView() {
       <div class="card kpi"><div class="lbl">Valor a precio de venta</div><div class="val">${money(tp)}</div><div class="foot">${P ? "ganancia potencial " + money(tp - tc) : "si se vende todo"}</div></div>
       <div class="card kpi"><div class="lbl">Variantes en stock bajo</div><div class="val red">${lowStock().length}</div><div class="foot">${lowStock().filter(x => x.v.stock === 0).length} agotadas</div></div></section>
     <section class="card"><div class="card-h"><h2>Inventario valorizado y rotación</h2><span class="hint">vendido en el período seleccionado</span></div>${tbl(`<th>Producto</th><th class="r">Stock</th><th class="r">Vendidas</th><th class="r">Días de stock</th>${P ? `<th class="r">Valor costo</th>` : ""}<th class="r">Valor venta</th><th>Alertas</th>`, rows.map(r => `<tr><td><b>${esc(r.p.name)}</b> <span class="hint">${esc(r.p.cat)}</span></td><td class="r">${r.st}</td><td class="r">${r.sold}</td><td class="r">${r.days == null ? "<span class='hint'>sin ventas</span>" : r.days < 7 ? `<span class="chip red">${r.days} d</span>` : r.days + " d"}</td>${P ? `<td class="r">${money(r.costV)}</td>` : ""}<td class="r">${money(r.priceV)}</td><td>${r.low ? `<span class="chip red">${r.low} variante${r.low > 1 ? "s" : ""}</span>` : `<span class="chip green">OK</span>`}</td></tr>`))}</section>`;
+  } else if (tab === "caja") {
+    cashHistoryLoad(days);
+    const key = days[0] + days[days.length - 1], H = S.cashHist && S.cashHist.key === key ? S.cashHist.list : null;
+    const closed = (H || []).filter(x => x.status === "cerrada"), dsum = closed.reduce((a, x) => a + (+x.difference || 0), 0), bad = closed.filter(x => Math.abs(+x.difference) >= 0.5).length;
+    const chip = (x) => x.status !== "cerrada" ? `<span class="chip">Abierta</span>` : Math.abs(+x.difference) < 0.5 ? `<span class="chip green">Cuadra</span>` : +x.difference < 0 ? `<span class="chip red">Faltan ${money(-x.difference)}</span>` : `<span class="chip warn">Sobran ${money(+x.difference)}</span>`;
+    body = `<div class="kpis kpis-3">
+      <div class="card kpi"><div class="lbl">Cierres</div><div class="val">${closed.length}</div><div class="foot">en el período</div></div>
+      <div class="card kpi"><div class="lbl">Con diferencia</div><div class="val" style="color:${bad ? "var(--red)" : "var(--green)"}">${bad}</div><div class="foot">${bad ? "revisá las notas" : "todas cuadraron"}</div></div>
+      <div class="card kpi"><div class="lbl">Diferencia acumulada</div><div class="val" style="color:${Math.abs(dsum) < 0.5 ? "var(--green)" : dsum < 0 ? "var(--red)" : "#B86E22"}">${Math.abs(dsum) < 0.5 ? "C$ 0" : (dsum < 0 ? "− " : "+ ") + money(Math.abs(dsum))}</div><div class="foot">faltantes − sobrantes</div></div></div>
+    <section class="card"><div class="card-h"><h2>Aperturas y cierres de caja</h2><span class="hint">tocá uno para ver el arqueo</span></div>
+      <div class="exp-list">${H === null ? `<div class="empty">Cargando…</div>` : H.map(x => `<div class="exp-row clickable" data-cashsess="${x.id}"><span class="exp-date"><b>${+x.day.slice(8)}</b><small>${new Date(x.day + "T12:00:00").toLocaleDateString("es", { month: "short" }).replace(".", "")}</small></span>
+        <span class="exp-main"><b>Fondo ${money(x.opening)} → contado ${x.counted != null ? money(x.counted) : "—"}</b><span class="exp-meta"><span class="hint">Abrió ${esc((x.opened_by || "—").split(" ")[0])} ${fmtT(x.opened_at)}${x.closed_at ? ` · cerró ${esc((x.closed_by || "—").split(" ")[0])} ${fmtT(x.closed_at)}` : ""}</span></span></span>
+        ${chip(x)}</div>`).join("") || `<div class="empty">No hubo cajas en el período</div>`}</div></section>`;
   } else if (tab === "movimientos") {
     const set = new Set(days); const mv = DB.moves.filter(m => set.has(dayOf(new Date(m.at))) && (S.partner === "all" || (m.partner || (varById(m.vid) || { p: {} }).p.partner) === S.partner)).slice().reverse();
     const lbl = { venta: "Venta", compra: "Compra", ajuste: "Ajuste", devolucion: "Devolución", inicial: "Stock inicial", anulacion: "Anulación" };
@@ -1643,12 +1812,13 @@ function bind() {
   app.querySelectorAll("[data-role]").forEach(s => s.onchange = (e) => { if (CLOUD) return act(() => sbq(sb.from("profiles").update({ role: e.target.value }).eq("id", e.target.dataset.role)), "Rol actualizado"); userById(e.target.dataset.role).role = e.target.value; save(); render(); toast("Rol actualizado"); });
 }
 document.addEventListener("click", (e) => {
-  const t = e.target.closest("[data-act],[data-add],[data-qty],[data-disc],[data-pay],[data-inv],[data-rep],[data-reptab],[data-photo],[data-lim],[data-toggle],[data-partner],[data-assign],[data-editprod],[data-sale-detail],[data-spk],[data-setpin],[data-erdet],[data-permrole],[data-edituser],[data-cattile],[data-catadd],[data-catedit],[data-catdel],[data-close]");
+  const t = e.target.closest("[data-act],[data-add],[data-qty],[data-disc],[data-pay],[data-inv],[data-rep],[data-reptab],[data-photo],[data-lim],[data-toggle],[data-partner],[data-assign],[data-editprod],[data-sale-detail],[data-spk],[data-setpin],[data-erdet],[data-cashsess],[data-permrole],[data-edituser],[data-cattile],[data-catadd],[data-catedit],[data-catdel],[data-close]");
   if (!t) { if (e.target.classList.contains("sheet-ov")) return closeSheet(); if (e.target.classList.contains("overlay")) { closeModal(); if (S.cartOpen) render(); } return; }
   if (t.dataset.close != null) { if (t.closest(".cart-screen")) S.cartOpen = false; closeModal(); if (S.cartOpen) render(); return; }
   if (t.dataset.editprod) return editProdModal(t.dataset.editprod);
   if (t.dataset.setpin) return pinSetModal(t.dataset.setpin);
   if (t.dataset.erdet) return erDetailModal(t.dataset.erdet);
+  if (t.dataset.cashsess) return cashSessionModal(t.dataset.cashsess);
   if (t.dataset.permrole) { S.permRole = t.dataset.permrole; return render(); }
   if (t.dataset.edituser) return editUserModal(t.dataset.edituser);
   if (t.dataset.saleDetail) return saleDetailModal(t.dataset.saleDetail);
@@ -1685,6 +1855,9 @@ document.addEventListener("click", (e) => {
   else if (a === "print") printTicket(t.dataset.sale);
   else if (a === "wa") waSend(t.dataset.sale);
   else if (a === "void") voidModal(t.dataset.sale);
+  else if (a === "caja") cashModal();
+  else if (a === "cash-move") cashMoveModal(t.dataset.type);
+  else if (a === "cash-count") cashCountModal();
   else if (a === "reticket") { const x = DB.sales.find(s => s.id === t.dataset.sale); if (x) showTicket(x); }
   else if (a === "share") shareTicket(t.dataset.sale);
   else if (a === "delprod" && CLOUD) { const pr = prodById(t.dataset.pid), st = pr ? pr.variants.reduce((x, v) => x + v.stock, 0) : 0;
