@@ -1954,6 +1954,29 @@ document.addEventListener("click", (e) => {
   else if (a === "reset") { if (confirm("¿Volver a los datos de ejemplo? Se borran las ventas registradas en este demo.")) reset(); }
 });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && $(".sheet-ov")) closeSheet(); });
+// ---------- Aviso de versión nueva ----------
+// La app instalada en el teléfono puede quedar abierta días con el código viejo en memoria.
+// Al volver a la app (y cada 10 min) se revisa si hay una versión publicada más nueva.
+const APP_V = 56;
+let updShown = false;
+async function checkUpdate() {
+  if (updShown || scannerParams()) return;
+  try {
+    const t = await (await fetch("sw.js?check=" + Date.now(), { cache: "no-store" })).text();
+    const m = t.match(/aris-v(\d+)/); if (!m || +m[1] <= APP_V) return;
+    updShown = true;
+    const reg = navigator.serviceWorker && await navigator.serviceWorker.getRegistration(); if (reg) reg.update().catch(() => {});
+    const busyNow = S.cart.length || $("#modal-root").innerHTML;
+    if (!busyNow) return location.reload();
+    const bar = document.createElement("div"); bar.className = "upd-bar";
+    bar.innerHTML = `<span>${LI("circle-alert")} Hay una versión nueva de la app</span><button class="btn sm">Actualizar</button>`;
+    bar.querySelector("button").onclick = () => location.reload();
+    document.body.appendChild(bar);
+  } catch {}
+}
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") checkUpdate(); });
+setInterval(checkUpdate, 10 * 60 * 1000);
+setTimeout(checkUpdate, 5000);
 window.addEventListener("hashchange", () => { if (scannerParams()) return startScannerMode(); if (me) { render(); if (CLOUD) cloudSoon(300); } });
 // Sincronía entre pestañas/ventanas del mismo navegador (en producción: Supabase Realtime)
 window.addEventListener("storage", (e) => { if (!CLOUD && e.key === KEY) { load(); if (me) { me = DB.users.find(u => u.id === me.id) || me; render(); } } });

@@ -1197,3 +1197,8 @@ svg.li{width:20px;height:20px;flex-shrink:0;stroke-width:1.9}
 .cart-item.ret-all{opacity:.55}
 .cart-item.ret-all .sd-amt{text-decoration:line-through}
 .cart-item .i b .chip{display:inline-flex;width:auto;vertical-align:1px;margin-left:4px;font-size:10.5px}
+.upd-bar{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + env(safe-area-inset-bottom));z-index:9000;display:flex;align-items:center;gap:12px;padding:10px 10px 10px 16px;border-radius:16px;background:var(--ink);color:#fff;font-size:13.5px;font-weight:600;box-shadow:0 14px 30px -10px rgba(0,0,0,.5);animation:lgIn .3s ease;max-width:calc(100vw - 24px)}
+.upd-bar span{display:inline-flex;align-items:center;gap:8px}
+.upd-bar svg.li{width:17px;height:17px;color:#FF8A9A}
+.upd-bar .btn{background:#fff;color:var(--ink);border:0;height:34px}
+@media (min-width:901px){.upd-bar{bottom:24px}}
