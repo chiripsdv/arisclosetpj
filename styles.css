@@ -923,3 +923,67 @@ svg.li{width:20px;height:20px;flex-shrink:0;stroke-width:1.9}
 /* Las clases para ocultar ganan siempre (evita duplicados por el orden del CSS) */
 @media (min-width:901px){.hide-d{display:none!important}}
 @media (max-width:900px){.hide-m{display:none!important}}
+
+/* ---------- Botón "Más" y hoja inferior (teléfono) ---------- */
+.tab-more{display:none}
+@media (max-width:900px){
+  .tab-more{display:flex;flex:1 1 0;min-width:0;flex-direction:column;align-items:center;gap:4px;font:inherit;font-size:10px;font-weight:600;color:var(--muted);background:none;border:0;padding:0;position:relative;cursor:pointer}
+  .tab-more svg.li{width:18px;height:18px;stroke-width:1.75}
+  .tab-more.active{color:var(--red);font-weight:700}
+  .tab-more.active svg{filter:drop-shadow(0 2px 6px rgba(214,0,28,.35))}
+  .tab-more .badge.dot{position:absolute;top:-2px;right:calc(50% - 16px);width:9px;height:9px;padding:0;border:2px solid #fff}
+}
+.sheet-ov{align-items:flex-end!important;padding:0!important;background:rgba(30,14,18,.42);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);animation:sheetFade .25s ease}
+.sheet{width:100%;max-width:560px;margin:0 auto;background:#fff;border-radius:26px 26px 0 0;padding:8px 18px calc(18px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:14px;max-height:88vh;overflow-y:auto;
+  box-shadow:0 -18px 50px -12px rgba(80,20,30,.35);animation:sheetUp .34s cubic-bezier(.2,.9,.25,1);transition:transform .25s cubic-bezier(.2,.9,.25,1)}
+.sheet-ov.closing{animation:sheetFadeOut .22s ease forwards}
+.sheet-ov.closing .sheet{transform:translateY(100%)!important;transition:transform .22s ease-in}
+@keyframes sheetUp{from{transform:translateY(100%)}to{transform:none}}
+@keyframes sheetFade{from{opacity:0}to{opacity:1}}
+@keyframes sheetFadeOut{to{opacity:0}}
+.sheet-grab{width:44px;height:5px;border-radius:99px;background:#E2DCDA;align-self:center;margin:4px 0 2px}
+.sheet-me{display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:18px;background:linear-gradient(135deg,#FFF5F6,#FBE7EA);border:1px solid #F7D6DA}
+.sheet-me .avatar{width:44px;height:44px;font-size:15px;flex-shrink:0}
+.sheet-me > span:last-child{display:flex;flex-direction:column;min-width:0}
+.sheet-me b{font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sheet-me small{font-size:12px;color:var(--muted)}
+.sheet-grid{display:flex;flex-direction:column;gap:8px}
+.sheet-item{display:flex;align-items:center;gap:14px;padding:12px;border-radius:18px;border:1px solid var(--line);background:#fff;color:var(--ink);text-decoration:none;transition:background .15s,transform .15s,border-color .15s;-webkit-tap-highlight-color:transparent}
+.sheet-item:active{transform:scale(.98);background:#FCF7F7}
+.sheet-item.on{border-color:#F2B8C0;background:#FFF7F8}
+.sheet-item .ct-ico.sm{width:44px;height:44px;border-radius:14px}
+.sheet-item .ct-ico svg{width:21px;height:21px;color:#fff;stroke:#fff}
+.si-t{flex:1;display:flex;flex-direction:column;min-width:0}
+.si-t b{font-size:15px}
+.si-t small{font-size:12px;color:var(--muted)}
+.sheet-item svg.si-go{width:18px;height:18px;color:var(--faint)}
+.sheet .install-btn{margin:0}
+.sheet-out{display:flex;align-items:center;justify-content:center;gap:8px;height:50px;border-radius:16px;border:1.5px solid var(--red);background:#fff;color:var(--red);font:inherit;font-size:15px;font-weight:700;cursor:pointer}
+.sheet-out:active{background:var(--red-soft)}
+.sheet-out svg.li{width:18px;height:18px}
+@media (prefers-reduced-motion:reduce){.sheet,.sheet-ov{animation:none}}
+
+/* Usuarios y permisos en el teléfono */
+.u-cards{display:flex;flex-direction:column;gap:12px}
+.u-card{padding:14px;display:flex;flex-direction:column;gap:10px}
+.u-card.off{opacity:.75}
+.u-top{display:flex;align-items:center;gap:12px}
+.u-top .avatar{width:44px;height:44px;font-size:15px;flex-shrink:0}
+.u-id{flex:1;min-width:0;display:flex;flex-direction:column}
+.u-id b{font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.u-id small{font-size:12.5px;color:var(--muted)}
+.u-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--line-soft);font-size:13.5px}
+.u-row span{color:var(--muted)}
+.u-row select{height:36px;border:1px solid var(--line);border-radius:10px;padding:0 10px;font:inherit;font-size:14px;background:#fff}
+.u-btns{display:flex;gap:8px;flex-wrap:wrap}
+.u-btns .btn{flex:1;height:40px;justify-content:center}
+.perm-m{padding:12px 14px 16px}
+.perm-seg{width:100%;margin-bottom:10px}
+.perm-seg button{flex:1}
+.perm-list{display:flex;flex-direction:column}
+.pl-grp{font-size:11.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;padding:14px 0 4px}
+.pl-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 0;border-bottom:1px solid var(--line-soft)}
+.pl-t{display:flex;flex-direction:column;min-width:0}
+.pl-t b{font-size:14px;font-weight:600}
+.pl-t small{font-size:12px;color:var(--muted)}
+.pl-row .switch,.pl-row .qty,.pl-row .chip{flex-shrink:0}.u-btns .btn.danger{border:1px solid #F2B8C0;color:var(--red);background:#fff}

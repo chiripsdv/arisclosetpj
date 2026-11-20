@@ -324,7 +324,7 @@ function render() {
     </div>
     <div class="dock">
       ${v === "venta" && S.cart.length ? cartBarHTML() : ""}
-      <nav class="tabbar">${NAV.filter(([k]) => role().views.includes(k)).slice(0, 5).map(([k, l]) => `<a href="#${k}" class="${v === k ? "active" : ""}">${I[k]}<span>${l}</span>${tabBadge(k, low)}</a>`).join("")}</nav>
+      <nav class="tabbar">${tabViews().main.map(([k, l]) => `<a href="#${k}" class="${v === k ? "active" : ""}">${I[k]}<span>${l}</span>${tabBadge(k, low)}</a>`).join("")}${tabViews().more.length ? `<button type="button" class="tab-more ${tabViews().more.some(([k]) => k === v) ? "active" : ""}" data-act="more" aria-label="Más opciones">${LI("layout-grid")}<span>Más</span>${tabViews().more.some(([k]) => tabBadge(k, low)) ? `<span class="badge dot"></span>` : ""}</button>` : ""}</nav>
     </div>
   </div>`;
   bind();
@@ -360,7 +360,35 @@ function cartBarHTML() {
   </div>`;
 }
 const greet = () => { const h = new Date().getHours(); return h < 12 ? "Buenos días" : h < 19 ? "Buenas tardes" : "Buenas noches"; };
-const topbar = (title, sub, right = "") => `<header class="topbar"><div><h1>${title}</h1><div class="sub">${sub}</div></div><div class="grow"></div>${right}<button class="btn icon hide-d" data-act="logout" title="Salir">${I.out}</button></header>`;
+const topbar = (title, sub, right = "") => `<header class="topbar"><div><h1>${title}</h1><div class="sub">${sub}</div></div><div class="grow"></div>${right}${tabViews().more.length ? "" : `<button class="btn icon hide-d" data-act="logout" title="Salir">${I.out}</button>`}</header>`;
+// Barra inferior del teléfono: hasta 5 botones; si hay más pantallas, el quinto es "Más"
+function tabViews() {
+  const all = NAV.filter(([k]) => role().views.includes(k));
+  return all.length > 5 ? { main: all.slice(0, 4), more: all.slice(4) } : { main: all, more: [] };
+}
+const SHEET_TONE = { panel: "t-rose", venta: "t-rose", inventario: "t-gold", gastos: "t-sage", reportes: "t-berry", catalogos: "t-gold", usuarios: "t-sage" };
+const SHEET_SUB = { reportes: "Ventas, utilidad y socios", catalogos: "Tienda, recibo y listas", usuarios: "Equipo, roles y permisos", gastos: "Registrar y revisar", inventario: "Stock y productos" };
+// Hoja que sube desde abajo, como en las apps nativas
+function moreSheet() {
+  const v = view(), low = lowStock().length;
+  $("#modal-root").innerHTML = `<div class="overlay sheet-ov"><div class="sheet" role="dialog" aria-modal="true" aria-label="Más opciones">
+    <div class="sheet-grab" aria-hidden="true"></div>
+    <div class="sheet-me"><span class="avatar ${me.role === "propietaria" ? "red" : ""}">${esc(initials(me.name))}</span><span><b>${esc(me.name)}</b><small>${esc(role().label)} · ${esc(DB.settings.store)}</small></span></div>
+    <nav class="sheet-grid">${tabViews().more.map(([k, l]) => `<a href="#${k}" class="sheet-item ${v === k ? "on" : ""}" data-close><span class="ct-ico sm ${SHEET_TONE[k] || "t-rose"}">${I[k]}</span><span class="si-t"><b>${l}</b><small>${SHEET_SUB[k] || ""}</small></span>${tabBadge(k, low)}${LI("chevron-right", "si-go")}</a>`).join("")}</nav>
+    ${installHTML()}
+    <button class="sheet-out" data-act="logout">${LI("log-out")} Cerrar sesión</button>
+  </div></div>`;
+  document.body.classList.add("lock");
+  // Deslizar hacia abajo para cerrar
+  const sh = $(".sheet"); let y0 = null, dy = 0;
+  sh.addEventListener("touchstart", (e) => { if (sh.scrollTop > 0) return; y0 = e.touches[0].clientY; dy = 0; sh.style.transition = "none"; }, { passive: true });
+  sh.addEventListener("touchmove", (e) => { if (y0 == null) return; dy = Math.max(0, e.touches[0].clientY - y0); sh.style.transform = `translateY(${dy}px)`; }, { passive: true });
+  sh.addEventListener("touchend", () => { if (y0 == null) return; y0 = null; sh.style.transition = ""; if (dy > 90) closeSheet(); else sh.style.transform = ""; });
+}
+function closeSheet() {
+  const ov = $(".sheet-ov"); if (!ov) return;
+  ov.classList.add("closing"); setTimeout(() => { if ($(".sheet-ov")) closeModal(); }, 220);
+}
 
 /* ---------- Login ---------- */
 // Fondo del login: prendas y accesorios como marca de agua, en posiciones fijas
@@ -1273,7 +1301,18 @@ function partnerModal(id) {
 /* ---------- Usuarios ---------- */
 function usersView() {
   return topbar("Usuarios", `${DB.users.filter(u => u.active).length} de 3 activos`, DB.users.filter(u => u.active).length < 3 ? `<button class="btn dark" data-act="newuser">${I.plus}<span class="hide-m">Nuevo usuario</span></button>` : "") + `
-  <div class="content"><section class="card"><div class="tbl-wrap"><table><thead><tr><th>Nombre</th><th>Usuario</th><th>Rol</th><th>Límite desc.</th><th>PIN</th><th>Estado</th><th></th></tr></thead><tbody>
+  <div class="content">
+  <div class="u-cards hide-d">${DB.users.map(u => {
+    const r = DB.roles[u.role], pin = u.active && r && r.maxDisc > 0;
+    return `<section class="card u-card ${u.active ? "" : "off"}">
+      <div class="u-top"><span class="avatar ${u.role === "propietaria" ? "red" : u.role === "vendedor" ? "grey" : ""}">${esc(initials(u.name))}</span>
+        <span class="u-id"><b>${esc(u.name)}</b><small>@${esc(CLOUD ? userOf(u.email) : u.email.split("@")[0])}${u.id === me.id ? " · vos" : ""}</small></span>
+        <span class="chip ${u.active ? "green" : "red"}">${u.active ? "Activo" : "Inactivo"}</span></div>
+      <div class="u-row"><span>Rol</span>${u.id === me.id ? `<b>${esc(r ? r.label : u.role)}</b>` : `<select data-role="${u.id}">${Object.entries(DB.roles).map(([k, x]) => `<option value="${k}" ${u.role === k ? "selected" : ""}>${esc(x.label)}</option>`).join("")}</select>`}</div>
+      <div class="u-row"><span>Descuento sin PIN</span><b>hasta ${r ? r.maxDisc : 0} %</b></div>
+      <div class="u-btns">${CLOUD ? `<button class="btn sm" data-edituser="${u.id}">${I.edit} Editar</button>` : ""}${pin ? `<button class="btn sm" data-setpin="${u.id}">${I.lock} PIN</button>` : ""}${u.id !== me.id ? `<button class="btn sm ${u.active ? "ghost danger" : "dark"}" data-toggle="${u.id}">${u.active ? "Desactivar" : "Activar"}</button>` : ""}</div>
+    </section>`; }).join("")}</div>
+  <section class="card hide-m"><div class="tbl-wrap"><table><thead><tr><th>Nombre</th><th>Usuario</th><th>Rol</th><th>Límite desc.</th><th>PIN</th><th>Estado</th><th></th></tr></thead><tbody>
   ${DB.users.map(u => `<tr><td><span class="who"><span class="avatar ${u.role === "propietaria" ? "red" : u.role === "vendedor" ? "grey" : ""}">${esc(initials(u.name))}</span><b>${esc(u.name)}</b></span></td><td style="color:var(--muted)">${esc(CLOUD ? userOf(u.email) : u.email)}</td>
     <td>${u.id === me.id ? `<span class="chip">${esc(DB.roles[u.role].label)}</span>` : `<select data-role="${u.id}" style="height:32px;border:1px solid var(--line);border-radius:8px;padding:0 8px">${Object.entries(DB.roles).map(([k, r]) => `<option value="${k}" ${u.role === k ? "selected" : ""}>${esc(r.label)}</option>`).join("")}</select>`}</td>
     <td>${DB.roles[u.role] ? DB.roles[u.role].maxDisc : 0} %</td><td>${u.active && DB.roles[u.role] && DB.roles[u.role].maxDisc > 0 ? `<button class="btn sm ghost" data-setpin="${u.id}">${I.lock} Definir</button>` : `<span class="hint">—</span>`}</td><td><span class="chip ${u.active ? "green" : "red"}">${u.active ? "Activo" : "Inactivo"}</span></td>
@@ -1309,8 +1348,16 @@ function permsHTML() {
     const on = key.startsWith("v:") ? r.views.includes(key.slice(2)) : !!r[key];
     return `<label class="switch" title="${on ? "Permitido" : "No permitido"}"><input type="checkbox" data-perm="${k}|${key}" ${on ? "checked" : ""}><span></span></label>`;
   };
-  return `<section class="card"><div class="card-h"><h2>Permisos por rol</h2><span class="hint">los cambios se aplican al instante</span></div>
-    <div class="tbl-wrap"><table class="perms"><thead><tr><th>Permiso</th>${roles.map(([, r]) => `<th class="c">${esc(r.label)}</th>`).join("")}</tr></thead><tbody>
+  // Teléfono: un rol a la vez, en lista
+  const editable = roles.filter(([k]) => k !== "propietaria");
+  const pr = DB.roles[S.permRole] && S.permRole !== "propietaria" ? S.permRole : (editable[editable.length - 1] || [])[0];
+  const mobile = `<div class="hide-d perm-m">
+    <div class="seg perm-seg">${editable.map(([k, r]) => `<button data-permrole="${k}" class="${k === pr ? "on" : ""}">${esc(r.label)}</button>`).join("")}</div>
+    <div class="perm-list">${PERMS.map(([label, key, help]) => key === null ? `<div class="pl-grp">${label}</div>`
+      : `<div class="pl-row"><span class="pl-t"><b>${label}</b>${help ? `<small>${help}</small>` : ""}</span>${cell(pr, DB.roles[pr], key)}</div>`).join("")}</div>
+    <div class="hint" style="padding:10px 2px 0">La propietaria siempre tiene todos los permisos.</div></div>`;
+  return `<section class="card"><div class="card-h"><h2>Permisos por rol</h2><span class="hint">los cambios se aplican al instante</span></div>${mobile}
+    <div class="tbl-wrap hide-m"><table class="perms"><thead><tr><th>Permiso</th>${roles.map(([, r]) => `<th class="c">${esc(r.label)}</th>`).join("")}</tr></thead><tbody>
     ${PERMS.map(([label, key, help]) => key === null ? `<tr class="grp"><td colspan="${roles.length + 1}">${label}</td></tr>`
       : `<tr><td><b>${label}</b>${help ? `<span class="s">${help}</span>` : ""}</td>${roles.map(([k, r]) => `<td class="c">${cell(k, r, key)}</td>`).join("")}</tr>`).join("")}
     <tr><td><b>Usuarios y permisos</b><span class="s">Solo la propietaria.</span></td>${roles.map(([k]) => `<td class="c">${k === "propietaria" ? `<span class="chip green">Siempre</span>` : `<span class="chip">No</span>`}</td>`).join("")}</tr>
@@ -1450,11 +1497,12 @@ function bind() {
   app.querySelectorAll("[data-role]").forEach(s => s.onchange = (e) => { if (CLOUD) return act(() => sbq(sb.from("profiles").update({ role: e.target.value }).eq("id", e.target.dataset.role)), "Rol actualizado"); userById(e.target.dataset.role).role = e.target.value; save(); render(); toast("Rol actualizado"); });
 }
 document.addEventListener("click", (e) => {
-  const t = e.target.closest("[data-act],[data-add],[data-qty],[data-disc],[data-pay],[data-inv],[data-rep],[data-reptab],[data-photo],[data-lim],[data-toggle],[data-partner],[data-assign],[data-editprod],[data-sale-detail],[data-spk],[data-setpin],[data-edituser],[data-cattile],[data-catadd],[data-catedit],[data-catdel],[data-close]");
-  if (!t) { if (e.target.classList.contains("overlay")) { closeModal(); if (S.cartOpen) render(); } return; }
+  const t = e.target.closest("[data-act],[data-add],[data-qty],[data-disc],[data-pay],[data-inv],[data-rep],[data-reptab],[data-photo],[data-lim],[data-toggle],[data-partner],[data-assign],[data-editprod],[data-sale-detail],[data-spk],[data-setpin],[data-permrole],[data-edituser],[data-cattile],[data-catadd],[data-catedit],[data-catdel],[data-close]");
+  if (!t) { if (e.target.classList.contains("sheet-ov")) return closeSheet(); if (e.target.classList.contains("overlay")) { closeModal(); if (S.cartOpen) render(); } return; }
   if (t.dataset.close != null) { if (t.closest(".cart-screen")) S.cartOpen = false; closeModal(); if (S.cartOpen) render(); return; }
   if (t.dataset.editprod) return editProdModal(t.dataset.editprod);
   if (t.dataset.setpin) return pinSetModal(t.dataset.setpin);
+  if (t.dataset.permrole) { S.permRole = t.dataset.permrole; return render(); }
   if (t.dataset.edituser) return editUserModal(t.dataset.edituser);
   if (t.dataset.saleDetail) return saleDetailModal(t.dataset.saleDetail);
   if (t.dataset.spk) { S.spk = +t.dataset.spk; try { localStorage.setItem("aris-spk", S.spk); } catch {} return render(); }
@@ -1478,7 +1526,8 @@ document.addEventListener("click", (e) => {
   if (t.dataset.toggle && CLOUD) { const u = userById(t.dataset.toggle); if (!u.active && DB.users.filter(x => x.active).length >= 3) return toast("Ya hay 3 usuarios activos. Desactivá uno primero.", true); return act(() => sbq(sb.from("profiles").update({ active: !u.active }).eq("id", u.id)), u.active ? `${u.name} desactivada` : `${u.name} activada`); }
   if (t.dataset.toggle) { const u = userById(t.dataset.toggle); u.active = !u.active; save(); return render(); }
   const a = t.dataset.act;
-  if (a === "opencart") { S.cartOpen = true; render(); }
+  if (a === "more") { moreSheet(); }
+  else if (a === "opencart") { S.cartOpen = true; render(); }
   else if (a === "sb") { S.sb = !S.sb; try { localStorage.setItem("aris-sb", S.sb ? "1" : "0"); } catch {} render(); }
   else if (a === "logout") logout();
   else if (a === "clearcart") { S.cart = []; S.disc = null; render(); }
@@ -1506,6 +1555,7 @@ document.addEventListener("click", (e) => {
   else if (a === "csv") exportCSV();
   else if (a === "reset") { if (confirm("¿Volver a los datos de ejemplo? Se borran las ventas registradas en este demo.")) reset(); }
 });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && $(".sheet-ov")) closeSheet(); });
 window.addEventListener("hashchange", () => { if (scannerParams()) return startScannerMode(); if (me) { render(); if (CLOUD) cloudSoon(300); } });
 // Sincronía entre pestañas/ventanas del mismo navegador (en producción: Supabase Realtime)
 window.addEventListener("storage", (e) => { if (!CLOUD && e.key === KEY) { load(); if (me) { me = DB.users.find(u => u.id === me.id) || me; render(); } } });
