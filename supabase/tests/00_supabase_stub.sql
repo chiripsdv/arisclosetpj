@@ -7,7 +7,7 @@ end $$;
 create schema extensions; create schema auth; create schema storage;
 grant usage on schema public, extensions to anon, authenticated, service_role;
 grant usage on schema auth, storage to anon, authenticated;
-create table auth.users (id uuid primary key default gen_random_uuid(), email text, raw_user_meta_data jsonb default '{}', encrypted_password text, updated_at timestamptz);
+create table auth.users (id uuid primary key default gen_random_uuid(), email text, raw_user_meta_data jsonb default '{}', encrypted_password text, updated_at timestamptz, email_confirmed_at timestamptz);
 create function auth.uid() returns uuid language sql stable as $$
   select coalesce(nullif(current_setting('request.jwt.claim.sub', true), ''),
                   nullif(current_setting('request.jwt.claims', true), '')::json ->> 'sub')::uuid $$;

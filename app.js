@@ -109,7 +109,7 @@ function errMsg(e) {
   const m = String((e && (e.message || e.error_description || e.msg)) || e || "");
   if (/invalid login credentials/i.test(m)) return "Usuario o contraseña incorrectos";
   if (/email address .* is invalid|invalid email|validate email/i.test(m)) return "Supabase no aceptó ese nombre de usuario. Probá solo con letras y números.";
-  if (/email not confirmed/i.test(m)) return "Falta confirmar el correo (revisá la bandeja de entrada)";
+  if (/email not confirmed/i.test(m)) return "Tu cuenta todavía no está habilitada: pedile a la propietaria que la abra en Usuarios → Editar y guarde";
   if (/failed to fetch|networkerror|load failed/i.test(m)) return "Sin conexión a internet. Intentá de nuevo.";
   if (/row-level security|permission denied/i.test(m)) return "Tu rol no tiene permiso para hacer esto";
   if (/variants_barcode_key|barcode/i.test(m) && /duplicate|unique/i.test(m)) return "Ese código de barras ya lo usa otra prenda";
@@ -1774,7 +1774,8 @@ async function createUserCloud(name, email, password, roleKey) {
   if (error) throw error;
   if (!data.user || (data.user.identities && !data.user.identities.length)) throw new Error("Ese usuario ya existe");
   await sbq(sb.from("profiles").update({ name, role: roleKey, active: true }).eq("id", data.user.id));
-  return !data.session;
+  // Los correos internos no existen: se confirma la cuenta aquí para que pueda entrar ya
+  try { await sbq(sb.rpc("admin_confirm_user", { p_user: data.user.id })); return false; } catch { return !data.session; }
 }
 function pinSetModal(id) {
   const u = userById(id);
@@ -1801,6 +1802,7 @@ function editUserModal(id) {
     return act(async () => {
       if (name !== u.name) await sbq(sb.from("profiles").update({ name }).eq("id", id));
       if (pass) await sbq(sb.rpc("admin_set_password", { p_user: id, p_password: pass }));
+      try { await sbq(sb.rpc("admin_confirm_user", { p_user: id })); } catch {}
     }, pass ? "Usuario actualizado y contraseña cambiada" : "Usuario actualizado");
   });
 }
@@ -1814,7 +1816,7 @@ function newUserModal() {
   <button class="btn dark lg full">Crear usuario</button></form>`, f => {
     if (CLOUD) { let confirmMail = false; return act(async () => { const user = String(f.get("user")).trim().toLowerCase();
       if (!/^[a-z0-9._-]{3,30}$/.test(user)) throw new Error("El usuario lleva de 3 a 30 letras o números, sin espacios");
-      confirmMail = await createUserCloud(f.get("name").trim(), toEmail(user), f.get("pass"), f.get("role")); }, "Usuario creado").then(ok => { if (ok && confirmMail) toast("Usuario creado. Tiene que confirmar su correo antes de entrar."); return ok; }); } DB.users.push({ id: uid(), name: f.get("name"), email: f.get("email"), role: f.get("role"), pass: f.get("pass"), pin: "", active: true }); save(); render(); });
+      confirmMail = await createUserCloud(f.get("name").trim(), toEmail(user), f.get("pass"), f.get("role")); }, "Usuario creado").then(ok => { if (ok && confirmMail) toast("Usuario creado, pero falta el script 0010_confirmar_usuarios.sql para que pueda entrar sin confirmar correo.", true); return ok; }); } DB.users.push({ id: uid(), name: f.get("name"), email: f.get("email"), role: f.get("role"), pass: f.get("pass"), pin: "", active: true }); save(); render(); });
 }
 
 /* ---------- PIN / código ---------- */
@@ -1957,7 +1959,7 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape" && $(".shee
 // ---------- Aviso de versión nueva ----------
 // La app instalada en el teléfono puede quedar abierta días con el código viejo en memoria.
 // Al volver a la app (y cada 10 min) se revisa si hay una versión publicada más nueva.
-const APP_V = 56;
+const APP_V = 57;
 let updShown = false;
 async function checkUpdate() {
   if (updShown || scannerParams()) return;
